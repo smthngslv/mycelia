@@ -1,9 +1,9 @@
 # Installation
 
-Right now you can install `mycelia` with `.whl` and `uv`, just do following:
+You can clone latest version fron git.
 
 ```shell
-uv add "path/to/mycelia-0.1.0-py3-none-any.whl[logfire]"
+UV_GIT_LFS=1 uv add "https://github.com/smthngslv/mycelia.git[logfire]"
 ```
 
 After that you need to create account in [Logfire](https://logfire.pydantic.dev/login) and run
