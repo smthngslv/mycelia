@@ -1,0 +1,260 @@
+[project]
+name = "mycelia"
+version = "0.1.0"
+description = """Task-first orchestration for services and agents. Mycelia runs multi-step, dependency-heavy \
+workflows, manages data flow, and connects messaging across components. A clean way to build distributed automation."""
+readme = "./docs/README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "logfire-api>=4.3.3",
+    "pydantic>=2.11.7",
+]
+
+[project.optional-dependencies]
+logfire = [
+    "logfire>=4.3.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    { include-group = "lint" },
+]
+lint = [
+    "mypy>=1.17.1",
+    "ruff>=0.12.7",
+]
+
+[tool.ruff]
+# https://docs.astral.sh/ruff/settings/#line-length.
+line-length = 120
+# https://docs.astral.sh/ruff/settings/#src.
+src = ["./src"]
+# https://docs.astral.sh/ruff/settings/#target-version.
+target-version = "py312"
+
+[tool.ruff.format]
+# https://docs.astral.sh/ruff/settings/#format_docstring-code-format.
+docstring-code-format = true
+# https://docs.astral.sh/ruff/settings/#format_line-ending.
+line-ending = "lf"
+# https://docs.astral.sh/ruff/settings/#format_skip-magic-trailing-comma.
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+# https://docs.astral.sh/ruff/settings/#lint_dummy-variable-rgx.
+dummy-variable-rgx = "^_+$"
+# https://docs.astral.sh/ruff/settings/#lint_ignore.
+ignore = [
+    # https://docs.astral.sh/ruff/rules/undocumented-public-module/.
+    "D100",
+    # https://docs.astral.sh/ruff/rules/undocumented-public-class/.
+    "D101",
+    # https://docs.astral.sh/ruff/rules/undocumented-public-method/.
+    "D102",
+    # https://docs.astral.sh/ruff/rules/undocumented-public-function/.
+    "D103",
+    # https://docs.astral.sh/ruff/rules/undocumented-public-package/.
+    "D104",
+    # https://docs.astral.sh/ruff/rules/undocumented-magic-method/.
+    "D105",
+    # https://docs.astral.sh/ruff/rules/undocumented-public-nested-class/.
+    "D106",
+    # https://docs.astral.sh/ruff/rules/undocumented-public-init/.
+    "D107",
+    # https://docs.astral.sh/ruff/rules/any-type/.
+    "ANN401",
+    # Avoid confilicts with ruff formatter.
+    # https://docs.astral.sh/ruff/rules/tab-indentation/.
+    "W191",
+    # https://docs.astral.sh/ruff/rules/indentation-with-invalid-multiple/.
+    "E111",
+    # https://docs.astral.sh/ruff/rules/indentation-with-invalid-multiple-comment/.
+    "E114",
+    # https://docs.astral.sh/ruff/rules/over-indented/.
+    "E117",
+    # https://docs.astral.sh/ruff/rules/indent-with-spaces/.
+    "D206",
+    # https://docs.astral.sh/ruff/rules/triple-single-quotes/.
+    "D300",
+    # https://docs.astral.sh/ruff/rules/bad-quotes-inline-string/.
+    "Q000",
+    # https://docs.astral.sh/ruff/rules/bad-quotes-multiline-string/.
+    "Q001",
+    # https://docs.astral.sh/ruff/rules/bad-quotes-docstring/.
+    "Q002",
+    # https://docs.astral.sh/ruff/rules/avoidable-escaped-quote/.
+    "Q003",
+    # https://docs.astral.sh/ruff/rules/missing-trailing-comma/.
+    "COM812",
+    # https://docs.astral.sh/ruff/rules/prohibited-trailing-comma/.
+    "COM819",
+    # https://docs.astral.sh/ruff/rules/single-line-implicit-string-concatenation/.
+    "ISC001",
+    # https://docs.astral.sh/ruff/rules/multi-line-implicit-string-concatenation/.
+    "ISC002",
+    # https://docs.astral.sh/ruff/rules/missing-todo-author/.
+    "TD002",
+    # https://docs.astral.sh/ruff/rules/missing-todo-link/.
+    "TD003",
+]
+# https://docs.astral.sh/ruff/settings/#lint_select.
+select = [
+    # https://docs.astral.sh/ruff/rules/#eradicate-era.
+    "ERA",
+    # https://docs.astral.sh/ruff/rules/#fastapi-fast.
+    "FAST",
+    # https://docs.astral.sh/ruff/rules/#flake8-2020-ytt.
+    "YTT",
+    # https://docs.astral.sh/ruff/rules/#flake8-annotations-ann.
+    "ANN",
+    # https://docs.astral.sh/ruff/rules/#flake8-async-async.
+    "ASYNC",
+    # https://docs.astral.sh/ruff/rules/#flake8-bandit-s.
+    "S",
+    # https://docs.astral.sh/ruff/rules/#flake8-boolean-trap-fbt.
+    "FBT",
+    # https://docs.astral.sh/ruff/rules/#flake8-bugbear-b.
+    "B",
+    # https://docs.astral.sh/ruff/rules/#flake8-builtins-a.
+    "A",
+    # https://docs.astral.sh/ruff/rules/#flake8-commas-com.
+    "COM",
+    # https://docs.astral.sh/ruff/rules/#flake8-comprehensions-c4.
+    "C4",
+    # https://docs.astral.sh/ruff/rules/#flake8-datetimez-dtz.
+    "DTZ",
+    # https://docs.astral.sh/ruff/rules/#flake8-debugger-t10.
+    "T10",
+    # https://docs.astral.sh/ruff/rules/#flake8-errmsg-em.
+    "EM",
+    # https://docs.astral.sh/ruff/rules/#flake8-executable-exe.
+    "EXE",
+    # https://docs.astral.sh/ruff/rules/#flake8-future-annotations-fa.
+    "FA",
+    # https://docs.astral.sh/ruff/rules/#flake8-implicit-str-concat-isc.
+    "ISC",
+    # https://docs.astral.sh/ruff/rules/#flake8-import-conventions-icn.
+    "ICN",
+    # https://docs.astral.sh/ruff/rules/#flake8-logging-log.
+    "LOG",
+    # https://docs.astral.sh/ruff/rules/#flake8-logging-format-g.
+    "G",
+    # https://docs.astral.sh/ruff/rules/#flake8-no-pep420-inp.
+    "INP",
+    # https://docs.astral.sh/ruff/rules/#flake8-pie-pie.
+    "PIE",
+    # https://docs.astral.sh/ruff/rules/#flake8-print-t20.
+    "T20",
+    # https://docs.astral.sh/ruff/rules/#flake8-pyi-pyi.
+    "PYI",
+    # https://docs.astral.sh/ruff/rules/#flake8-pytest-style-pt.
+    "PT",
+    # https://docs.astral.sh/ruff/rules/#flake8-quotes-q.
+    "Q",
+    # https://docs.astral.sh/ruff/rules/#flake8-raise-rse.
+    "RSE",
+    # https://docs.astral.sh/ruff/rules/#flake8-return-ret.
+    "RET",
+    # https://docs.astral.sh/ruff/rules/#flake8-self-slf.
+    "SLF",
+    # https://docs.astral.sh/ruff/rules/#flake8-simplify-sim.
+    "SIM",
+    # https://docs.astral.sh/ruff/rules/#flake8-slots-slot.
+    "SLOT",
+    # https://docs.astral.sh/ruff/rules/#flake8-tidy-imports-tid.
+    "TID",
+    # https://docs.astral.sh/ruff/rules/#flake8-todos-td.
+    "TD",
+    # https://docs.astral.sh/ruff/rules/#flake8-type-checking-tc.
+    "TC",
+    # https://docs.astral.sh/ruff/rules/#flake8-unused-arguments-arg.
+    "ARG",
+    # https://docs.astral.sh/ruff/rules/#flake8-use-pathlib-pth.
+    "PTH",
+    # https://docs.astral.sh/ruff/rules/#flynt-fly.
+    "FLY",
+    # https://docs.astral.sh/ruff/rules/#isort-i.
+    "I",
+    # https://docs.astral.sh/ruff/rules/#mccabe-c90.
+    "C90",
+    # https://docs.astral.sh/ruff/rules/#numpy-specific-rules-npy.
+    "NPY",
+    # https://docs.astral.sh/ruff/rules/#pandas-vet-pd.
+    "PD",
+    # https://docs.astral.sh/ruff/rules/#pep8-naming-n.
+    "N",
+    # https://docs.astral.sh/ruff/rules/#perflint-perf.
+    "PERF",
+    # https://docs.astral.sh/ruff/rules/#pycodestyle-e-w.
+    "E", "W",
+    # https://docs.astral.sh/ruff/rules/#pydocstyle-d.
+    "D",
+    # https://docs.astral.sh/ruff/rules/#pyflakes-f.
+    "F",
+    # https://docs.astral.sh/ruff/rules/#pygrep-hooks-pgh.
+    "PGH",
+    # https://docs.astral.sh/ruff/rules/#pylint-pl.
+    "PLC", "PLE", "PLR", "PLW",
+    # https://docs.astral.sh/ruff/rules/#pyupgrade-up.
+    "UP",
+    # https://docs.astral.sh/ruff/rules/#refurb-furb.
+    "FURB",
+    # https://docs.astral.sh/ruff/rules/#ruff-specific-rules-ruf.
+    "RUF",
+    # https://docs.astral.sh/ruff/rules/#tryceratops-try.
+    "TRY",
+]
+# https://docs.astral.sh/ruff/settings/#lint_task-tags.
+task-tags = ["TODO"]
+
+[tool.ruff.lint.flake8-bugbear]
+# https://docs.astral.sh/ruff/settings/#lint_flake8-bugbear_extend-immutable-calls.
+extend-immutable-calls = ["slice", "pathlib.PurePath", "mycelia.di.DI.request"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+# https://docs.astral.sh/ruff/settings/#lintflake8-tidy-imports.
+ban-relative-imports = "all"
+
+[tool.ruff.lint.isort]
+# https://docs.astral.sh/ruff/settings/#lint_isort_classes.
+classes = ["datetime.datetime"]
+# https://docs.astral.sh/ruff/settings/#lint_isort_combine-as-imports.
+combine-as-imports = true
+# https://docs.astral.sh/ruff/settings/#lint_isort_constants.
+constants = []
+# https://docs.astral.sh/ruff/settings/#lint_isort_split-on-trailing-comma
+split-on-trailing-comma = false
+# https://docs.astral.sh/ruff/settings/#lint_isort_variables.
+variables = []
+
+[tool.ruff.lint.pep8-naming]
+# https://docs.astral.sh/ruff/settings/#lint_pep8-naming_classmethod-decorators.
+classmethod-decorators = []
+# https://docs.astral.sh/ruff/settings/#lint_pep8-naming_staticmethod-decorators.
+staticmethod-decorators = []
+
+[tool.ruff.lint.pydocstyle]
+# https://docs.astral.sh/ruff/settings/#lint_pydocstyle_convention.
+convention = "google"
+
+[tool.mypy]
+# https://mypy.readthedocs.io/en/stable/config_file.html#confval-mypy_path.
+mypy_path = "src"
+# https://mypy.readthedocs.io/en/stable/config_file.html#confval-disable_error_code.
+disable_error_code = []
+# https://mypy.readthedocs.io/en/stable/config_file.html#confval-plugins.
+# https://docs.pydantic.dev/latest/integrations/mypy/#enabling-the-plugin.
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = []
+# https://mypy.readthedocs.io/en/stable/config_file.html#confval-ignore_missing_imports.
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# We do not use classes as tests.
+python_classes = ""
