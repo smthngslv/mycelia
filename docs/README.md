@@ -480,3 +480,81 @@ i.e. with just adding `logfire.instrument_openai()` line after `logfire.configur
 Or filter to see only LLM calls (also as tree structure).
 
 ![img.png](images/logfire_12.png)
+
+## Interfaces
+
+Sometimes graphs can be massive and have some heavy dependencies. And when you will try to import a node from such
+graph from another you anyway have to import all dependencies, i.e:
+
+File `graph_heavy.py`
+
+```python
+import torch
+
+my_graph: Final[Graph] = Graph()
+
+@mycelia.node(my_graph)
+async def my_heavy_node(_: Context, /) -> None:
+    torch.load(...)
+    ...
+```
+
+File `graph_light.py`
+
+```python
+# You need to install `pytorch` to use it, even if in `graph_light` you do not need it.
+from .graph_heavy import my_heavy_node
+
+my_graph: Final[Graph] = Graph()
+
+@mycelia.node(my_graph)
+async def my_node_2(_: Context, /) -> None:
+    return my_heavy_node()
+```
+
+To be able to deal with it, `Mycelia` introduces interfaces:
+
+File `common.py`
+
+```python
+@mycelia.node
+async def my_heavy_node(_: Context, /) -> None:
+    raise NotImplementedError
+```
+
+That's it. To define interface you do not need any graph definition, just mark function as node and raise
+`NotImplementedError` in it. Then in `graph_heavy.py` you need to define __implementation__ for that interface:
+
+File `graph_heavy.py`
+
+```python
+import torch
+
+from .common import my_heavy_node
+
+my_graph: Final[Graph] = Graph()
+
+@my_heavy_node.implementation(my_graph)
+async def my_heavy_node_impl(_: Context, /) -> None:
+    torch.load(...)
+    ...
+```
+
+As simple as that. Only thing that you need to do is import interface node `my_heavy_node` and use
+`my_heavy_node.implementation(my_graph)` decorator to define implementation. And now in `graph_light.py` you can just
+import lightweight interface, without need to install `pytorch`.
+
+File `graph_light.py`
+
+```python
+# You do not need to install `pytorch` anymore.
+from .common import my_heavy_node
+
+my_graph: Final[Graph] = Graph()
+
+@mycelia.node(my_graph)
+async def my_node_2(_: Context, /) -> None:
+    return my_heavy_node()
+```
+
+Similar you can deal with circular dependencies or multiple repositories.
