@@ -1,12 +1,13 @@
 import asyncio
 import contextlib
-from asyncio import Queue, Task
+from asyncio import CancelledError, Task
 from collections.abc import Callable, Coroutine
 from types import TracebackType
 from typing import Any, ClassVar, Final, Self, final
+from uuid import UUID
 
-from mycelia.domains.nodes.entities import Event, NodeCompletedEvent, NodeEnqueuedEvent
 from mycelia.services.broker.interface import IBroker
+from mycelia.tracing import TraceContext
 
 __all__: Final[tuple[str, ...]] = ("LocalBroker",)
 
@@ -14,40 +15,36 @@ __all__: Final[tuple[str, ...]] = ("LocalBroker",)
 @final
 class LocalBroker(IBroker):
     __slots__: ClassVar[tuple[str, ...]] = (
-        "__invoke_callbacks_task",
-        "__on_node_completed_callback",
+        "__on_graph_cancelled_callback",
         "__on_node_enqueued_callback",
-        "__queue",
         "__tasks",
-        "__worker",
+        "__watcher_task",
     )
 
-    def __init__(self: Self) -> None:
-        self.__queue: Queue[Event] = Queue()
-        self.__on_node_enqueued_callback: Callable[[NodeEnqueuedEvent], Coroutine] | None = None
-        self.__on_node_completed_callback: Callable[[NodeCompletedEvent], Coroutine] | None = None
-        self.__tasks: set[Task] = set()
-        self.__invoke_callbacks_task: Final[Task[None]] = asyncio.create_task(self.__invoke_callbacks())
-        self.__is_shutdown: Final[asyncio.Event] = asyncio.Event()
+    def __init__(
+        self: Self,
+        /,
+        on_node_enqueued_callback: Callable[[UUID, TraceContext], Coroutine],
+        on_graph_cancelled_callback: Callable[[UUID], Coroutine],
+    ) -> None:
+        self.__on_node_enqueued_callback: Final[Callable[[UUID, TraceContext], Coroutine]] = on_node_enqueued_callback
+        self.__on_graph_cancelled_callback: Final[Callable[[UUID], Coroutine]] = on_graph_cancelled_callback
+        self.__tasks: Final[set[Task]] = set()
+        self.__watcher_task: Final[Task[None]] = asyncio.create_task(self.__watcher())
 
-    async def publish(self: Self, event: Event, options: Any) -> None:  # noqa:ARG002
-        self.__queue.put_nowait(event)
+    async def publish_node_enqueued(
+        self: Self,
+        /,
+        node_id: UUID,
+        graph_trace_context: TraceContext,
+        options: Any,  # noqa: ARG002
+    ) -> None:
+        self.__tasks.add(asyncio.create_task(self.__on_node_enqueued_callback(node_id, graph_trace_context)))
 
-    def set_on_node_enqueued_callback(self: Self, function: Callable[[NodeEnqueuedEvent], Coroutine]) -> None:
-        if self.__on_node_enqueued_callback is not None:
-            message: Final[str] = "The `on_node_enqueued` callback is already set."
-            raise RuntimeError(message)
+    async def publish_graph_cancelled(self: Self, /, graph_id: UUID) -> None:
+        self.__tasks.add(asyncio.create_task(self.__on_graph_cancelled_callback(graph_id)))
 
-        self.__on_node_enqueued_callback = function
-
-    def set_on_node_completed_callback(self: Self, function: Callable[[NodeCompletedEvent], Coroutine]) -> None:
-        if self.__on_node_completed_callback is not None:
-            message: Final[str] = "The `on_node_completed` callback is already set."
-            raise RuntimeError(message)
-
-        self.__on_node_completed_callback = function
-
-    async def __aenter__(self: Self) -> Self:
+    async def __aenter__(self: Self, /) -> Self:
         return self
 
     async def __aexit__(
@@ -58,47 +55,22 @@ class LocalBroker(IBroker):
         /,
     ) -> None:
         if exc_value is not None:
-            self.__invoke_callbacks_task.cancel()
+            self.__watcher_task.cancel()
             raise exc_value
 
-        with contextlib.suppress(KeyboardInterrupt, asyncio.CancelledError):
-            await self.__invoke_callbacks_task
+        with contextlib.suppress(KeyboardInterrupt, CancelledError):
+            await self.__watcher_task
 
-        for task in self.__tasks:
-            await task
+        await asyncio.gather(*self.__tasks)
 
-    async def __invoke_callbacks(self: Self) -> None:
+    async def __watcher(self: Self, /) -> None:
         while True:
-            try:
-                event: Event = await asyncio.wait_for(self.__queue.get(), timeout=1.0)
-
-            except TimeoutError:
+            if len(self.__tasks) == 0:
+                await asyncio.sleep(delay=0.1)
                 continue
 
-            if isinstance(event, NodeEnqueuedEvent) and self.__on_node_enqueued_callback is not None:
-                self.__tasks.add(asyncio.create_task(self.__on_node_enqueued_callback(event)))
-
-            elif isinstance(event, NodeCompletedEvent) and self.__on_node_completed_callback is not None:
-                self.__tasks.add(asyncio.create_task(self.__on_node_completed_callback(event)))
-
-            else:
-                message: str = f"Unexpected event type: `{type(event)}`."
-                raise RuntimeError(message)
-
-            tasks: set[Task] = self.__tasks
-            self.__tasks = set()
-            task: Task
-            for task in tasks:
-                if not task.done():
-                    self.__tasks.add(task)
-                    continue
-
-                try:
-                    await task
-
-                except Exception as exception:
-                    message = f"Task `{task}` raised an exception: `{exception}`."
-                    raise RuntimeError(message) from exception
-
-        if len(self.__tasks) != 0:
-            await asyncio.gather(*self.__tasks)
+            done: set[Task]
+            pending: set[Task]
+            done, pending = await asyncio.wait(self.__tasks, return_when=asyncio.FIRST_COMPLETED)
+            self.__tasks.difference_update(done)
+            await asyncio.gather(*done)
