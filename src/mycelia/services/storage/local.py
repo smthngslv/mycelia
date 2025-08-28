@@ -1,105 +1,180 @@
+import typing
 from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Final, Self, final
-from uuid import UUID, uuid4
+from uuid import UUID
 
-import logfire_api as logfire
-
-from mycelia.domains.nodes.entities import Node
+from mycelia.domains.graphs.entities import Node
 from mycelia.services.storage.interface import IStorage
+from mycelia.tracing import TraceContext
 
 __all__: Final[tuple[str, ...]] = ("LocalStorage",)
 
 
 @final
+class _GraphStatus(str, Enum):
+    CREATED = "created"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+@final
+@dataclass
+class _Graph:
+    id: UUID
+    result: Any
+    status: _GraphStatus
+    trace_context: TraceContext
+    dependent_graph_id: UUID | None
+    dependent_node_ids: set[UUID]
+
+
+@final
+@dataclass
+class _Node:
+    id: UUID
+    graph_id: UUID
+    handler_id: Any
+    arguments: dict[int | str, Any]
+    dependencies: dict[int | str, UUID]
+    broker_options: Any
+    executor_options: Any
+
+
+@final
 class LocalStorage(IStorage):
-    __slots__: Final[tuple[str, ...]] = (
-        "__callbacks",
-        "__dependencies",
-        "__node_result_associations",
-        "__nodes",
-        "__parents",
-        "__results",
-        "__unresolved_dependencies",
-    )
+    def __init__(self: Self, /) -> None:
+        self.__graphs: Final[dict[UUID, _Graph]] = {}
+        self.__nodes: Final[dict[UUID, _Node]] = {}
 
-    def __init__(self: Self) -> None:
-        self.__nodes: Final[dict[UUID, Node]] = {}
-        self.__results: Final[dict[UUID, Any]] = {}
-        self.__node_result_associations: Final[dict[UUID, UUID]] = {}
-        self.__dependencies: Final[dict[UUID, dict[int | str, UUID]]] = {}
-        self.__unresolved_dependencies: Final[dict[UUID, set[UUID]]] = {}
-        self.__callbacks: Final[dict[UUID, set[UUID]]] = {}
-        self.__parents: Final[dict[UUID, UUID]] = {}
-        self.__logfire_ctx: Final[dict[UUID, Mapping[str, Any]]] = {}
+    async def create_graph(self: Self, /, id_: UUID, trace_context: TraceContext) -> None:
+        self.__graphs[id_] = _Graph(
+            id=id_,
+            result=None,
+            status=_GraphStatus.CREATED,
+            trace_context=trace_context,
+            dependent_graph_id=None,
+            dependent_node_ids=set(),
+        )
 
-    async def create_node(  # noqa:PLR0913
+    async def create_node(  # noqa: PLR0913
         self: Self,
+        /,
         id_: UUID,
-        handler_id: UUID,
+        graph_id: UUID,
+        handler_id: Any,
         arguments: Mapping[int | str, Any],
         dependencies: Mapping[int | str, UUID],
         broker_options: Any,
         executor_options: Any,
-        options: Any,
-        logfire_ctx: Mapping[str, Any],
-    ) -> None:
-        self.__callbacks[id_] = set()
-        self.__dependencies[id_] = dict(dependencies)
-        self.__unresolved_dependencies[id_] = set(dependencies.values())
-        self.__nodes[id_] = Node(
+        options: Any,  # noqa: ARG002
+    ) -> bool:
+        if self.__graphs[graph_id].status != _GraphStatus.CREATED:
+            # TODO: Add exception.
+            raise RuntimeError
+
+        node: Final[_Node] = _Node(
             id=id_,
+            graph_id=graph_id,
             handler_id=handler_id,
             arguments=dict(arguments),
+            dependencies={},
             broker_options=broker_options,
-            storage_options=options,
             executor_options=executor_options,
         )
-        self.__logfire_ctx[id_] = logfire_ctx
 
-    async def save_result(self: Self, node_id: UUID, result: Any, options: Any) -> UUID:  # noqa: ARG002
-        result_id: Final[UUID] = uuid4()
-        self.__results[result_id] = result
-
-        if node_id in self.__node_result_associations:
-            logfire.warning(f"Node {node_id} already has result!")
-
-        self.__node_result_associations[node_id] = result_id
-        return result_id
-
-    async def get_node(self: Self, node_id: UUID, options: Any) -> Node:  # noqa: ARG002
-        return self.__nodes[node_id]
-
-    async def get_callbacks(self: Self, node_id: UUID) -> set[UUID]:
-        return self.__callbacks[node_id]
-
-    async def get_parent(self: Self, node_id: UUID, options: Any) -> UUID | None:  # noqa:ARG002
-        return self.__parents.get(node_id)
-
-    async def get_logfire_ctx(self: Self, node_id: UUID, options: Any) -> Mapping[str, Any]:  # noqa:ARG002
-        return self.__logfire_ctx[node_id]
-
-    async def set_parent(self: Self, node_id: UUID, parent_id: UUID) -> None:
-        self.__parents[node_id] = parent_id
-
-    async def set_dependency_result(self: Self, node_id: UUID, dependency_id: UUID, result_id: UUID) -> bool:
         key: int | str
-        value: UUID
-        for key, value in self.__dependencies[node_id].items():
-            if value == dependency_id:
-                self.__nodes[node_id].arguments[key] = self.__results[result_id]
+        dependency_graph_id: UUID
+        for key, dependency_graph_id in dependencies.items():
+            graph: _Graph = self.__graphs[dependency_graph_id]
 
-        self.__unresolved_dependencies[node_id].discard(dependency_id)
-        return len(self.__unresolved_dependencies[node_id]) == 0
+            if graph.status == _GraphStatus.CANCELLED:
+                # TODO: Add exception.
+                raise RuntimeError
 
-    async def set_callback_or_get_result_id(
-        self: Self,
-        node_id: UUID,
-        dependent_id: UUID,
-        options: Any,  # noqa: ARG002
-    ) -> UUID | None:
-        # Node is finished.
-        if node_id in self.__node_result_associations:
-            return self.__node_result_associations[node_id]
+            if graph.status == _GraphStatus.COMPLETED:
+                node.arguments[key] = graph.result
+                continue
 
-        self.__callbacks[node_id].add(dependent_id)
-        return None
+            graph.dependent_node_ids.add(node.id)
+            node.dependencies[key] = dependency_graph_id
+
+        self.__nodes[id_] = node
+        return len(node.dependencies) == 0
+
+    async def get_node(self: Self, /, id_: UUID) -> Node:
+        node: Final[_Node] = self.__nodes[id_]
+        return Node(
+            graph_id=node.graph_id,
+            handler_id=node.handler_id,
+            arguments=node.arguments,
+            broker_options=node.broker_options,
+            executor_options=node.executor_options,
+        )
+
+    async def link_graphs(
+        self: Self, /, dependent_id: UUID, dependency_id: UUID
+    ) -> list[tuple[UUID, TraceContext, Any] | UUID]:
+        dependency_graph: Final[_Graph] = self.__graphs[dependency_id]
+
+        if dependency_graph.status == _GraphStatus.COMPLETED:
+            return await self.mark_graph_completed(dependent_id, self.__graphs[dependency_id].result)
+
+        if dependency_graph.status == _GraphStatus.CANCELLED:
+            return typing.cast(
+                "list[tuple[UUID, TraceContext, Any] | UUID]", await self.mark_graph_cancelled(dependent_id)
+            )
+
+        if dependency_graph.dependent_graph_id is not None and dependency_graph.dependent_graph_id != dependent_id:
+            message: Final[str] = "A graph already has a dependent graph."
+            raise RuntimeError(message)
+
+        dependency_graph.dependent_graph_id = dependent_id
+        return []
+
+    async def mark_graph_completed(
+        self: Self, /, id_: UUID, result: Any
+    ) -> list[tuple[UUID, TraceContext, Any] | UUID]:
+        graph: Final[_Graph] = self.__graphs[id_]
+        graph.result = result
+        graph.status = _GraphStatus.COMPLETED
+
+        dependent_node_ids: Final[set[UUID]] = set(graph.dependent_node_ids)
+        dependent_graph_id: UUID | None = graph.dependent_graph_id
+        while dependent_graph_id is not None:
+            dependent_node_ids.update(self.__graphs[dependent_graph_id].dependent_node_ids)
+            dependent_graph_id = self.__graphs[dependent_graph_id].dependent_graph_id
+
+        ready_nodes: Final[list[tuple[UUID, TraceContext, Any] | UUID]] = []
+        dependent_node_id: UUID
+        for dependent_node_id in dependent_node_ids:
+            node: _Node = self.__nodes[dependent_node_id]
+            resolved_dependencies: dict[int | str, Any] = {
+                key: result for key, dependency_graph_id in node.dependencies.items() if dependency_graph_id == id_
+            }
+
+            node.arguments.update(resolved_dependencies)
+            for key in resolved_dependencies:
+                node.dependencies.pop(key)
+
+            if len(node.dependencies) == 0:
+                ready_nodes.append((node.id, self.__graphs[node.graph_id].trace_context, node.broker_options))
+
+        return ready_nodes
+
+    # TODO: Avoid recursion.
+    async def mark_graph_cancelled(self: Self, /, id_: UUID) -> list[UUID]:
+        graph: Final[_Graph] = self.__graphs[id_]
+        graph.status = _GraphStatus.CANCELLED
+
+        dependent_graph_ids: Final[set[UUID]] = {graph.id}
+        if graph.dependent_graph_id is not None:
+            dependent_graph_ids.update(await self.mark_graph_cancelled(graph.dependent_graph_id))
+
+        dependent_node_id: UUID
+        for dependent_node_id in graph.dependent_node_ids:
+            dependent_node: _Node = self.__nodes[dependent_node_id]
+            dependent_graph_ids.update(await self.mark_graph_cancelled(dependent_node.graph_id))
+
+        return list(dependent_graph_ids)

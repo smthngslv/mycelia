@@ -6,11 +6,11 @@ from collections.abc import Awaitable, Callable, Set as AbstractSet
 from inspect import BoundArguments, Signature
 from types import EllipsisType
 from typing import Any, ClassVar, Concatenate, Final, Protocol, Self, final, overload
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from mycelia.domains.nodes.entities import NodeCall
+from mycelia.domains.graphs.entities import Call
 
-__all__: Final[tuple[str, ...]] = ("Context", "Graph", "Node", "SupportsUnion", "node")
+__all__: Final[tuple[str, ...]] = ("Context", "Graph", "Node", "SupportsUnion", "node", "pause")
 
 
 class SupportsUnion(Protocol):
@@ -23,17 +23,17 @@ class SupportsUnion(Protocol):
 
 @final
 class Context:
-    __slots__: ClassVar[tuple[str, ...]] = ("__orchestrate_node_call",)
+    __slots__: ClassVar[tuple[str, ...]] = ("__orchestrate_call",)
 
-    def __init__(self: Self, orchestrate_node_call: Callable[[NodeCall], Awaitable], /) -> None:
-        self.__orchestrate_node_call: Final[Callable[[NodeCall], Awaitable]] = orchestrate_node_call
+    def __init__(self: Self, orchestrate_call: Callable[[Call], Awaitable], /) -> None:
+        self.__orchestrate_call: Final[Callable[[Call], Awaitable]] = orchestrate_call
 
-    async def submit(self: Self, node_call: Any, /) -> None:
-        if not isinstance(node_call, NodeCall):
+    async def submit(self: Self, node_call: Any, /) -> UUID:
+        if not isinstance(node_call, Call):
             message: Final[str] = f"Expected NodeCall object, got {type(node_call)}."
             raise TypeError(message)
 
-        await self.__orchestrate_node_call(node_call)
+        return await self.__orchestrate_call(node_call)
 
 
 @final
@@ -203,7 +203,7 @@ class Node[**P, R]:
         arguments.update(binding.kwargs.items())
         # First argument is actually a `Context` object.
         arguments.pop(-1)
-        return NodeCall(  # type: ignore[return-value]
+        return Call(  # type: ignore[return-value]
             id=uuid4(),
             handler_id=self.id,
             arguments=arguments,
@@ -263,4 +263,10 @@ def node[**P, R](
     return typing.cast(
         "Callable[[Callable[Concatenate[Context, P], Awaitable[R]]], Node[P, R]]",
         functools.partial(node, function_or_graph, **kwargs),
+    )
+
+
+def pause[R](_: type[R]) -> R:
+    return Call(  # type: ignore[return-value]
+        id=uuid4(), handler_id=None, arguments={}, broker_options=None, storage_options=None, executor_options=None
     )
