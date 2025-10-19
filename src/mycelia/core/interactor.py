@@ -19,7 +19,7 @@ from mycelia.core.entities import (
 from mycelia.services.broker.interface import IBroker
 from mycelia.services.executor import IExecutor
 from mycelia.services.storage.interface import IStorage
-from mycelia.tracing import TRACER, TraceContext, Tracer
+from mycelia.tracing import TraceContext, Tracer
 from mycelia.utils import EventWithSubscribers, EventWithValue, SingleUseLockWithValue, gather
 
 __all__: Final[tuple[str, ...]] = ("Interactor",)
@@ -27,7 +27,7 @@ __all__: Final[tuple[str, ...]] = ("Interactor",)
 
 @final
 class Interactor:
-    __TRACER: Final[Tracer] = TRACER.get_child("core")
+    __TRACER: Final[Tracer] = Tracer(__name__)
     __SESSIONS: ClassVar[dict[UUID, EventWithSubscribers]] = {}
 
     @overload

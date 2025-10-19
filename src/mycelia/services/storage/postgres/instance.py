@@ -16,7 +16,7 @@ from mycelia.core.errors import NodeNodeFoundError, SessionCancelledError, Sessi
 from mycelia.services.storage.interface import IStorage
 from mycelia.services.storage.postgres.tables import DependenciesTable, GraphsTable, NodesTable, SessionsTable
 from mycelia.services.storage.postgres.types import UTCDateTime
-from mycelia.tracing import TRACER, Tracer
+from mycelia.tracing import Tracer
 from mycelia.utils import Entity
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ class PostgresStorageParams(Entity):
 class PostgresStorage(IStorage[PostgresStorageParams]):
     __slots__: ClassVar[tuple[str, ...]] = ("__engine", "__session_maker")
 
-    __TRACER: Final[Tracer] = TRACER.get_child("services.storage.postgres")
+    __TRACER: ClassVar[Tracer] = Tracer(__name__)
 
     @classmethod
     def get_bytes_from_params(cls: type[Self], /, params: PostgresStorageParams) -> bytes:

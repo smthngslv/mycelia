@@ -7,16 +7,18 @@ from mycelia.interface.common import Graph, Node, NodeCall
 from mycelia.interface.executor import Executor, ExecutorParams
 from mycelia.services.broker.interface import IBroker
 from mycelia.services.storage.interface import IStorage
-from mycelia.tracing import TRACER, Tracer
+from mycelia.tracing import Tracer
 from mycelia.utils import gather
 
 __all__: Final[tuple[str, ...]] = ("Client", "Server")
+
+TRACER: Final[Tracer] = Tracer(__name__)
 
 
 @final
 class Client[SP: Any, BP: Any]:
     __slots__: Final[tuple[str, ...]] = ("__broker", "__storage")
-    __TRACER: Final[Tracer] = TRACER.get_child("interface.instance.client")
+    __TRACER: Final[Tracer] = TRACER.get_child("client")
 
     def __init__(self: Self, /, storage: IStorage[SP], broker: IBroker[BP]) -> None:
         self.__storage: Final[IStorage[SP]] = storage
@@ -36,7 +38,7 @@ class Client[SP: Any, BP: Any]:
 @final
 class Server[SP: Any, BP: Any]:
     __slots__: Final[tuple[str, ...]] = ("__broker", "__executor", "__storage")
-    __TRACER: Final[Tracer] = TRACER.get_child("interface.instance.server")
+    __TRACER: Final[Tracer] = TRACER.get_child("server")
 
     @classmethod
     @__TRACER.with_span_async(Tracer.INFO, "server.create")

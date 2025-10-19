@@ -25,7 +25,7 @@ except ImportError:
 if TYPE_CHECKING:
     from types import TracebackType
 
-__all__: Final[tuple[str, ...]] = ("TRACER", "TraceContext", "TraceLevel", "Tracer")
+__all__: Final[tuple[str, ...]] = ("TraceContext", "TraceLevel", "Tracer")
 
 logfire_api.add_non_user_code_prefix(__file__)
 
@@ -112,9 +112,9 @@ class Tracer:
 
     def __init__(
         self: Self,
+        scope: str,
         /,
         *,
-        scope: str = "mycelia",
         tags: AbstractSet[str] | None = frozenset(("mycelia",)),
         logfire: Logfire = logfire_api.DEFAULT_LOGFIRE_INSTANCE,
     ) -> None:
@@ -134,7 +134,7 @@ class Tracer:
 
     def get_child(self: Self, scope: str, /, *, tags: AbstractSet[str] | None = None) -> Self:
         # Scope is not propagated by logfire, it has to be done manually.
-        return self.__class__(logfire=self.__logfire, scope=f"{self.__scope}.{scope}", tags=tags)
+        return self.__class__(f"{self.__scope}.{scope}", tags=tags, logfire=self.__logfire)
 
     def log(
         self: Self,
@@ -331,6 +331,3 @@ class Tracer:
             "code.function": function.__qualname__,
             "code.lineno": getattr(getattr(function, "__code__", None), "co_firstlineno", None),
         }
-
-
-TRACER: Final[Tracer] = Tracer()

@@ -20,7 +20,7 @@ from pydantic import Field
 
 from mycelia.core.entities import EnqueuedNode
 from mycelia.services.broker.interface import IBroker, OnNodeEnqueuedCallback, OnSessionCancelledCallback
-from mycelia.tracing import TRACER, Tracer
+from mycelia.tracing import Tracer
 from mycelia.utils import Entity
 
 __all__: Final[tuple[str, ...]] = ("RabbitMQBroker", "RabbitMQBrokerParams")
@@ -40,7 +40,7 @@ class RabbitMQBrokerParams(Entity):
 class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
     __slots__: Final[tuple[str, ...]] = ("__connection", "__consumers", "__control_exchange", "__node_exchange")
 
-    __TRACER: ClassVar[Tracer] = TRACER.get_child("services.broker.rabbitmq")
+    __TRACER: ClassVar[Tracer] = Tracer(__name__)
     __NODE_EXCHANGE_NAME: ClassVar[str] = "node"
     __CONTROL_EXCHANGE_NAME: ClassVar[str] = "control"
 

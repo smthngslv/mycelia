@@ -14,7 +14,7 @@ from mycelia import RunContext
 from mycelia.core.entities import CompletedNode, InvokedNode, RunningNode
 from mycelia.interface.common import PAUSE_MARKER, Node, NodeCall, NodeCalls
 from mycelia.services.executor import IExecutor
-from mycelia.tracing import TRACER, Tracer
+from mycelia.tracing import Tracer
 from mycelia.utils import Codec, Entity
 
 __all__: Final[tuple[str, ...]] = ("Executor", "ExecutorParams")
@@ -56,7 +56,7 @@ class ExecutorParams(Entity):
 @final
 class Executor(IExecutor[ExecutorParams]):
     __slots__: ClassVar[tuple[str, ...]] = ("__nodes",)
-    __TRACER: Final[Tracer] = TRACER.get_child("interface.executor")
+    __TRACER: Final[Tracer] = Tracer(__name__)
     # TODO: Support passing `Node` object somehow.
     __CODEC: ClassVar[Codec] = Codec(
         serializers={
