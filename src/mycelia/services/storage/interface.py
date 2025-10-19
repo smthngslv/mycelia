@@ -1,50 +1,59 @@
 from abc import abstractmethod
-from collections.abc import Mapping
-from typing import Any, Final, Protocol, Self
+from typing import Any, Final, Protocol, Self, overload
 from uuid import UUID
 
-from mycelia.domains.graphs.entities import Node
-from mycelia.tracing import TraceContext
+from mycelia.core.entities import CompletedNode, CreatedGraph, CreatedNode, CreatedSession, ReadyNode, StartedNode
 
 __all__: Final[tuple[str, ...]] = ("IStorage",)
 
 
-class IStorage(Protocol):
+class IStorage[ParamsType: Any](Protocol):
+    @classmethod
     @abstractmethod
-    async def create_graph(self: Self, /, id_: UUID, trace_context: TraceContext) -> None:
+    def get_bytes_from_params(cls: type[Self], /, params: ParamsType) -> bytes:
         raise NotImplementedError
 
+    @classmethod
     @abstractmethod
-    async def create_node(  # noqa: PLR0913
-        self: Self,
-        /,
-        id_: UUID,
-        graph_id: UUID,
-        handler_id: Any,
-        arguments: Mapping[int | str, Any],
-        dependencies: Mapping[int | str, UUID],
-        broker_options: Any,
-        executor_options: Any,
-        options: Any,
+    def get_params_from_bytes(cls: type[Self], /, packed: bytes) -> ParamsType:
+        raise NotImplementedError
+
+    @overload
+    @abstractmethod
+    async def create_node(self: Self, /, params: ParamsType, node: CreatedNode) -> bool:
+        raise NotImplementedError
+
+    @overload
+    @abstractmethod
+    async def create_node(self: Self, /, params: ParamsType, node: CreatedNode, graph: CreatedGraph) -> bool:
+        raise NotImplementedError
+
+    @overload
+    @abstractmethod
+    async def create_node(
+        self: Self, /, params: ParamsType, node: CreatedNode, graph: CreatedGraph, session: CreatedSession
     ) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    async def get_node(self: Self, /, id_: UUID) -> Node:
+    async def create_node(
+        self: Self,
+        /,
+        params: ParamsType,
+        node: CreatedNode,
+        graph: CreatedGraph | None = None,
+        session: CreatedSession | None = None,
+    ) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    async def link_graphs(
-        self: Self, /, dependent_id: UUID, dependency_id: UUID
-    ) -> list[tuple[UUID, TraceContext, Any] | UUID]:
+    async def start_node(self: Self, /, id_: UUID) -> StartedNode:
         raise NotImplementedError
 
     @abstractmethod
-    async def mark_graph_completed(
-        self: Self, /, id_: UUID, result: Any
-    ) -> list[tuple[UUID, TraceContext, Any] | UUID]:
+    async def complete_node(self: Self, /, node: CompletedNode) -> list[ReadyNode]:
         raise NotImplementedError
 
     @abstractmethod
-    async def mark_graph_cancelled(self: Self, /, id_: UUID) -> list[UUID]:
+    async def cancel_session(self: Self, /, id_: UUID) -> bool:
         raise NotImplementedError

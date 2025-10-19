@@ -1,18 +1,28 @@
 [project]
 name = "mycelia"
-version = "0.1.0dev1"
+version = "1.0.0b1"
 description = """Task-first orchestration for services and agents. Mycelia runs multi-step, dependency-heavy \
 workflows, manages data flow, and connects messaging across components. A clean way to build distributed automation."""
 readme = "./docs/README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "logfire-api>=4.3.3",
-    "pydantic>=2.11.7",
+    "logfire-api>=4.13.2",
+    "ormsgpack>=1.11.0",
+    "pydantic>=2.12.2",
 ]
 
 [project.optional-dependencies]
 logfire = [
-    "logfire>=4.3.3",
+    "logfire>=4.13.2",
+]
+postgres = [
+    "sqlalchemy[asyncio,postgresql-asyncpg]>=2.0.44",
+]
+postgres-migrations = [
+    "alembic>=1.17.0",
+]
+rabbitmq = [
+    "aio-pika>=9.5.7",
 ]
 
 [build-system]
@@ -20,12 +30,12 @@ requires = ["uv_build>=0.8.4,<0.9.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = [
-    { include-group = "lint" },
-]
 lint = [
-    "mypy>=1.17.1",
-    "ruff>=0.12.7",
+    "asyncpg-stubs>=0.30.2",
+    "mypy>=1.18.2",
+    "pydantic>=2.12.2",
+    "ruff>=0.14.0",
+    "sqlalchemy[mypy]>=2.0.44",
 ]
 
 [tool.ruff]
@@ -247,14 +257,21 @@ mypy_path = "src"
 # https://mypy.readthedocs.io/en/stable/config_file.html#confval-disable_error_code.
 disable_error_code = []
 # https://mypy.readthedocs.io/en/stable/config_file.html#confval-plugins.
-# https://docs.pydantic.dev/latest/integrations/mypy/#enabling-the-plugin.
-plugins = ["pydantic.mypy"]
+plugins = [
+    # https://docs.pydantic.dev/latest/integrations/mypy/#enabling-the-plugin.
+    "pydantic.mypy",
+    # https://docs.sqlalchemy.org/en/20/orm/extensions/mypy.html.
+    "sqlalchemy.ext.mypy.plugin",
+]
 
 [[tool.mypy.overrides]]
-module = []
+module = [
+    # https://github.com/msgpack/msgpack-python/issues/448.
+    "msgpack.*",
+]
 # https://mypy.readthedocs.io/en/stable/config_file.html#confval-ignore_missing_imports.
 ignore_missing_imports = true
 
-[tool.pytest.ini_options]
-# We do not use classes as tests.
-python_classes = ""
+# https://alembic.sqlalchemy.org/en/latest/tutorial.html#using-pyproject-toml-for-configuration.
+[tool.alembic]
+script_location = "%(here)s/src/mycelia/services/storage/postgres/migrations"

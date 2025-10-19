@@ -1,50 +1,33 @@
-import dataclasses
+import contextlib
 import functools
 import inspect
-from collections.abc import Awaitable, Callable, Set as AbstractSet
+from collections.abc import Callable, Coroutine, Iterator, Mapping, Set as AbstractSet
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Final, Literal, Self, final
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal, Self, cast, final
 
 import logfire_api
-
-# TODO: Must be replaced with `logfire_api` when issue fixed: https://github.com/pydantic/logfire/issues/1324.
-from logfire.propagate import attach_context, get_context
+import logfire_api.propagate
 from logfire_api import Logfire, LogfireSpan
 
-# TODO: I need `get_current_span()` method in `logfire_api`: https://github.com/pydantic/logfire/issues/674.
-from opentelemetry.trace import Span, get_current_span
+# TODO: This is workaround: https://github.com/pydantic/logfire/issues/674.
+from logfire_api._internal.main import set_user_attributes_on_raw_span
 
-__all__: Final[tuple[str, ...]] = (
-    "DEBUG",
-    "ERROR",
-    "FATAL",
-    "INFO",
-    "NOTICE",
-    "TRACE",
-    "WARNING",
-    "Span",
-    "TraceContext",
-    "TraceLevel",
-    "debug",
-    "error",
-    "fatal",
-    "get_current_span",
-    "info",
-    "log",
-    "logfire",
-    "notice",
-    "span",
-    "trace",
-    "warning",
-    "with_span",
-)
+get_current_span: Any
+
+try:
+    from opentelemetry.trace import get_current_span
+
+except ImportError:
+    get_current_span = None
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+__all__: Final[tuple[str, ...]] = ("TRACER", "TraceContext", "TraceLevel", "Tracer")
 
 logfire_api.add_non_user_code_prefix(__file__)
-# TODO: The `console_log` does not have effect here for some reason, same as `stack_offset`.
-logfire: Final[Logfire] = logfire_api.with_settings(tags=("mycelia",))
 
 
 @final
@@ -58,169 +41,296 @@ class TraceLevel(str, Enum):
     FATAL = "fatal"
 
 
-TRACE: Literal[TraceLevel.TRACE] = TraceLevel.TRACE
-DEBUG: Literal[TraceLevel.DEBUG] = TraceLevel.DEBUG
-INFO: Literal[TraceLevel.INFO] = TraceLevel.INFO
-NOTICE: Literal[TraceLevel.NOTICE] = TraceLevel.NOTICE
-WARNING: Literal[TraceLevel.WARNING] = TraceLevel.WARNING
-ERROR: Literal[TraceLevel.ERROR] = TraceLevel.ERROR
-FATAL: Literal[TraceLevel.FATAL] = TraceLevel.FATAL
+@final
+class TraceContext:
+    __slots__: ClassVar[tuple[str, ...]] = ("__parent",)
+
+    @classmethod
+    def get_current(cls: type[Self], /) -> Self:
+        return cls(parent=logfire_api.propagate.get_context().get("traceparent"))
+
+    @classmethod
+    def from_bytes(cls: type[Self], /, packed: bytes) -> Self:
+        if len(packed) == 0:
+            return cls()
+
+        unpacked: Final[str] = packed.hex()
+        return cls(parent=f"{unpacked[:2]}-{unpacked[2:34]}-{unpacked[34:50]}-{unpacked[50:]}")
+
+    @classmethod
+    def from_json_dict(cls: type[Self], /, json_dict: Mapping[str, Any]) -> Self:
+        return cls(parent=json_dict.get("traceparent"))
+
+    def __init__(self: Self, /, *, parent: str | None = None) -> None:
+        self.__parent: Final[str | None] = parent
+
+    @property
+    def is_empty(self: Self, /) -> bool:
+        return self.__parent is None
+
+    def to_bytes(self: Self, /) -> bytes:
+        return bytes.fromhex(self.__parent.replace("-", "")) if self.__parent is not None else b""
+
+    def to_json_dict(self: Self, /) -> dict[str, str | None]:
+        # Keep well-known name here.
+        return {"traceparent": self.__parent} if self.__parent is not None else {}
+
+    @contextlib.contextmanager
+    def attach(self: Self, /, tracer: "Tracer") -> Iterator[None]:
+        with logfire_api.propagate.attach_context(self.to_json_dict()):
+            try:
+                yield
+
+            except BaseException as exception:
+                exception = exception.with_traceback(cast("TracebackType", exception.__traceback__).tb_next)
+                # We have to log exception manually since the context is restored and current span cannot be updated.
+                tracer.error("error", exception_=exception)
+                raise
 
 
 @final
-@dataclass(frozen=True)
-class TraceContext:
-    traceparent: str | None = None
+class Tracer:
+    __slots__: ClassVar[tuple[str, ...]] = ("__logfire", "__scope")
 
-    @classmethod
-    def get_current(cls: type[Self]) -> Self:
-        return cls(**get_context())
+    TRACE: ClassVar[Literal[TraceLevel.TRACE]] = TraceLevel.TRACE
+    DEBUG: ClassVar[Literal[TraceLevel.DEBUG]] = TraceLevel.DEBUG
+    INFO: ClassVar[Literal[TraceLevel.INFO]] = TraceLevel.INFO
+    NOTICE: ClassVar[Literal[TraceLevel.NOTICE]] = TraceLevel.NOTICE
+    WARNING: ClassVar[Literal[TraceLevel.WARNING]] = TraceLevel.WARNING
+    ERROR: ClassVar[Literal[TraceLevel.ERROR]] = TraceLevel.ERROR
+    FATAL: ClassVar[Literal[TraceLevel.FATAL]] = TraceLevel.FATAL
+    __TRACE_LEVELS: ClassVar[Mapping[int, TraceLevel]] = {
+        0: TraceLevel.TRACE,
+        1: TraceLevel.TRACE,
+        5: TraceLevel.DEBUG,
+        9: TraceLevel.INFO,
+        10: TraceLevel.NOTICE,
+        13: TraceLevel.WARNING,
+        17: TraceLevel.ERROR,
+        21: TraceLevel.FATAL,
+    }
 
-    def attach(self: Self) -> AbstractContextManager[None]:
-        return attach_context(dataclasses.asdict(self))
+    def __init__(
+        self: Self,
+        /,
+        *,
+        scope: str = "mycelia",
+        tags: AbstractSet[str] | None = frozenset(("mycelia",)),
+        logfire: Logfire = logfire_api.DEFAULT_LOGFIRE_INSTANCE,
+    ) -> None:
+        self.__scope: Final[str] = scope
+        self.__logfire: Final[Logfire] = logfire.with_settings(
+            tags=tuple(tags) if tags is not None else (), custom_scope_suffix=scope
+        )
 
+    @staticmethod
+    def set_attributes_to_current_span(**attributes: Any) -> None:
+        if get_current_span is not None:
+            set_user_attributes_on_raw_span(get_current_span(), attributes)
 
-def log(
-    level: TraceLevel,
-    message: str,
-    /,
-    *,
-    tags_: AbstractSet[str] | None = None,
-    exception_: BaseException | None = None,
-    **attributes: Any,
-) -> None:
-    if tags_ is None:
-        tags_ = set()
+    @property
+    def level(self: Self, /) -> TraceLevel:
+        return self.__TRACE_LEVELS[self.__logfire.config.min_level]
 
-    logfire.log(level.value, message, attributes, tags=tuple(tags_), exc_info=exception_)
+    def get_child(self: Self, scope: str, /, *, tags: AbstractSet[str] | None = None) -> Self:
+        # Scope is not propagated by logfire, it has to be done manually.
+        return self.__class__(logfire=self.__logfire, scope=f"{self.__scope}.{scope}", tags=tags)
 
+    def log(
+        self: Self,
+        level: TraceLevel,
+        message: str,
+        /,
+        *,
+        tags_: AbstractSet[str] | None = None,
+        exception_: BaseException | None = None,
+        **attributes: Any,
+    ) -> None:
+        if tags_ is None:
+            tags_ = set()
 
-def trace(
-    message: str,
-    /,
-    *,
-    tags_: AbstractSet[str] | None = None,
-    exception_: BaseException | None = None,
-    **attributes: Any,
-) -> None:
-    return log(TRACE, message, tags_=tags_, exception_=exception_, **attributes)
+        self.__logfire.log(level.value, message, attributes, tags=tuple(tags_), exc_info=exception_)
 
+    def trace(
+        self: Self,
+        message: str,
+        /,
+        *,
+        tags_: AbstractSet[str] | None = None,
+        exception_: BaseException | None = None,
+        **attributes: Any,
+    ) -> None:
+        return self.log(self.TRACE, message, tags_=tags_, exception_=exception_, **attributes)
 
-def debug(
-    message: str,
-    /,
-    *,
-    tags_: AbstractSet[str] | None = None,
-    exception_: BaseException | None = None,
-    **attributes: Any,
-) -> None:
-    return log(DEBUG, message, tags_=tags_, exception_=exception_, **attributes)
+    def debug(
+        self: Self,
+        message: str,
+        /,
+        *,
+        tags_: AbstractSet[str] | None = None,
+        exception_: BaseException | None = None,
+        **attributes: Any,
+    ) -> None:
+        return self.log(self.DEBUG, message, tags_=tags_, exception_=exception_, **attributes)
 
+    def info(
+        self: Self,
+        message: str,
+        /,
+        *,
+        tags_: AbstractSet[str] | None = None,
+        exception_: BaseException | None = None,
+        **attributes: Any,
+    ) -> None:
+        return self.log(self.INFO, message, tags_=tags_, exception_=exception_, **attributes)
 
-def info(
-    message: str,
-    /,
-    *,
-    tags_: AbstractSet[str] | None = None,
-    exception_: BaseException | None = None,
-    **attributes: Any,
-) -> None:
-    return log(INFO, message, tags_=tags_, exception_=exception_, **attributes)
+    def notice(
+        self: Self,
+        message: str,
+        /,
+        *,
+        tags_: AbstractSet[str] | None = None,
+        exception_: BaseException | None = None,
+        **attributes: Any,
+    ) -> None:
+        return self.log(self.NOTICE, message, tags_=tags_, exception_=exception_, **attributes)
 
+    def warning(
+        self: Self,
+        message: str,
+        /,
+        *,
+        tags_: AbstractSet[str] | None = None,
+        exception_: BaseException | None = None,
+        **attributes: Any,
+    ) -> None:
+        return self.log(self.WARNING, message, tags_=tags_, exception_=exception_, **attributes)
 
-def notice(
-    message: str,
-    /,
-    *,
-    tags_: AbstractSet[str] | None = None,
-    exception_: BaseException | None = None,
-    **attributes: Any,
-) -> None:
-    return log(NOTICE, message, tags_=tags_, exception_=exception_, **attributes)
+    def error(
+        self: Self,
+        message: str,
+        /,
+        *,
+        tags_: AbstractSet[str] | None = None,
+        exception_: BaseException | None = None,
+        **attributes: Any,
+    ) -> None:
+        return self.log(self.ERROR, message, tags_=tags_, exception_=exception_, **attributes)
 
+    def fatal(
+        self: Self,
+        message: str,
+        /,
+        *,
+        tags_: AbstractSet[str] | None = None,
+        exception_: BaseException | None = None,
+        **attributes: Any,
+    ) -> None:
+        return self.log(self.FATAL, message, tags_=tags_, exception_=exception_, **attributes)
 
-def warning(
-    message: str,
-    /,
-    *,
-    tags_: AbstractSet[str] | None = None,
-    exception_: BaseException | None = None,
-    **attributes: Any,
-) -> None:
-    return log(WARNING, message, tags_=tags_, exception_=exception_, **attributes)
+    def span(
+        self: Self,
+        level: TraceLevel,
+        name: str,
+        /,
+        *,
+        message_: str | None = None,
+        tags_: AbstractSet[str] | None = None,
+        **attributes: Any,
+    ) -> AbstractContextManager[LogfireSpan]:
+        if message_ is None:
+            message_ = name
 
+        if tags_ is None:
+            tags_ = set()
 
-def error(
-    message: str,
-    /,
-    *,
-    tags_: AbstractSet[str] | None = None,
-    exception_: BaseException | None = None,
-    **attributes: Any,
-) -> None:
-    return log(ERROR, message, tags_=tags_, exception_=exception_, **attributes)
+        return self.__logfire.span(message_, _tags=tuple(tags_), _span_name=name, _level=level.value, **attributes)
 
+    def with_span_async[**P, R](
+        self: Self,
+        level: TraceLevel,
+        name: str,
+        /,
+        *,
+        message_: str | None = None,
+        tags_: AbstractSet[str] | None = None,
+        **attributes: Any,
+    ) -> Callable[[Callable[P, Coroutine[None, None, R]]], Callable[P, Coroutine[None, None, R]]]:
+        if message_ is None:
+            message_ = name
 
-def fatal(
-    message: str,
-    /,
-    *,
-    tags_: AbstractSet[str] | None = None,
-    exception_: BaseException | None = None,
-    **attributes: Any,
-) -> None:
-    return log(FATAL, message, tags_=tags_, exception_=exception_, **attributes)
+        if tags_ is None:
+            tags_ = set()
 
+        def _decorator(function: Callable[P, Coroutine[None, None, R]]) -> Callable[P, Coroutine[None, None, R]]:
+            attributes.update(self.__get_code_attributes(function))
 
-def span(
-    level: TraceLevel,
-    name: str,
-    /,
-    *,
-    message_: str | None = None,
-    tags_: AbstractSet[str] | None = None,
-    **attributes: Any,
-) -> AbstractContextManager[LogfireSpan]:
-    if message_ is None:
-        message_ = name
+            @functools.wraps(function)
+            async def _wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                with self.__logfire.span(
+                    message_, _tags=tuple(tags_), _span_name=name, _level=level.value, **attributes
+                ):
+                    return await function(*args, **kwargs)
 
-    if tags_ is None:
-        tags_ = set()
+            return _wrapper
 
-    return logfire.span(message_, _tags=tuple(tags_), _span_name=name, _level=level.value, **attributes)
+        return _decorator
 
+    def with_span_sync[**P, R](
+        self: Self,
+        level: TraceLevel,
+        name: str,
+        /,
+        *,
+        message_: str | None = None,
+        tags_: AbstractSet[str] | None = None,
+        **attributes: Any,
+    ) -> Callable[[Callable[P, R]], Callable[P, R]]:
+        if message_ is None:
+            message_ = name
 
-def with_span[**P, R](
-    level: TraceLevel,
-    name: str,
-    /,
-    *,
-    message_: str | None = None,
-    tags_: AbstractSet[str] | None = None,
-    **attributes: Any,
-) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
-    if message_ is None:
-        message_ = name
+        if tags_ is None:
+            tags_ = set()
 
-    if tags_ is None:
-        tags_ = set()
+        def _decorator(function: Callable[P, R]) -> Callable[P, R]:
+            attributes.update(self.__get_code_attributes(function))
 
-    def _decorator(function: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
-        attributes.update(_get_code_attributes(function))
+            @functools.wraps(function)
+            def _wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                with self.__logfire.span(
+                    message_, _tags=tuple(tags_), _span_name=name, _level=level.value, **attributes
+                ):
+                    return function(*args, **kwargs)
 
+            return _wrapper
+
+        return _decorator
+
+    def with_reset_context_async[**P, R](
+        self: Self, /, function: Callable[P, Coroutine[None, None, R]]
+    ) -> Callable[P, Coroutine[None, None, R]]:
         @functools.wraps(function)
         async def _wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            with logfire.span(message_, _tags=tuple(tags_), _span_name=name, _level=level.value, **attributes):
+            with TraceContext().attach(self):
                 return await function(*args, **kwargs)
 
         return _wrapper
 
-    return _decorator
+    def with_reset_context_sync[**P, R](self: Self, /, function: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(function)
+        def _wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            with TraceContext().attach(self):
+                return function(*args, **kwargs)
+
+        return _wrapper
+
+    @staticmethod
+    def __get_code_attributes(function: Callable) -> dict[str, Any]:
+        return {
+            "code.filepath": Path(inspect.getfile(function)).relative_to(Path.cwd()).as_posix(),
+            "code.function": function.__qualname__,
+            "code.lineno": getattr(getattr(function, "__code__", None), "co_firstlineno", None),
+        }
 
 
-def _get_code_attributes(function: Callable) -> dict[str, Any]:
-    return {
-        "code.filepath": Path(inspect.getfile(function)).relative_to(Path.cwd()).as_posix(),
-        "code.function": function.__qualname__,
-        "code.lineno": getattr(getattr(function, "__code__", None), "co_firstlineno", None),
-    }
+TRACER: Final[Tracer] = Tracer()
