@@ -1,6 +1,5 @@
-import asyncio
 import functools
-from asyncio import Event, Task
+from asyncio import Event, Task, TaskGroup
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from datetime import timedelta
 from types import TracebackType
@@ -75,31 +74,20 @@ async def gather(coroutines: Iterable[Coroutine], /) -> tuple[Any, ...]:
 
 
 async def gather(*coroutines: Coroutine | Iterable[Coroutine]) -> tuple[Any, ...]:
-    tasks: Final[tuple[Task, ...]] = tuple(
-        map(
-            asyncio.create_task,
-            cast(
-                "Iterable[Coroutine]",
-                coroutines if len(coroutines) != 1 or isinstance(coroutines[0], Coroutine) else coroutines[0],
-            ),
+    task_group: TaskGroup
+    async with TaskGroup() as task_group:
+        tasks: Final[tuple[Task, ...]] = tuple(
+            map(
+                task_group.create_task,
+                cast(
+                    "Iterable[Coroutine]",
+                    coroutines if len(coroutines) != 1 or isinstance(coroutines[0], Coroutine) else coroutines[0],
+                ),
+            )
         )
-    )
 
-    if len(tasks) == 0:
-        return ()
-
-    await asyncio.wait(tasks)
-
-    exceptions: Final[list[BaseException]] = []
-    task: Task
-    for task in tasks:
-        exception: BaseException | None = task.exception()
-        if exception is not None:
-            exceptions.append(exception)
-
-    if len(exceptions) != 0:
-        message: Final[str] = "One or more callbacks failed."
-        raise BaseExceptionGroup(message, exceptions)
+        if len(tasks) == 0:
+            return ()
 
     return tuple(task.result() for task in tasks)
 
@@ -229,12 +217,12 @@ class Entity(BaseModel):
         return f"{type(self).__name__}({super().__repr__()})"
 
     @classmethod
-    @functools.lru_cache
+    @functools.lru_cache(maxsize=None, typed=True)
     def __get_field_to_index_mapping(cls: type[Self], /) -> dict[str, int]:
         return {field: index for index, field in enumerate(cls.model_fields)}
 
     @classmethod
-    @functools.lru_cache
+    @functools.lru_cache(maxsize=None, typed=True)
     def __get_index_to_field_mapping(cls: type[Self], /) -> dict[int, str]:
         # It's okay to use this, since it's ordered.
         # https://docs.pydantic.dev/latest/concepts/models/#field-ordering.

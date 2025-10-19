@@ -1,4 +1,5 @@
 import asyncio
+import functools
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -74,6 +75,7 @@ class Executor(IExecutor[ExecutorParams]):
         return ExecutorParams.from_bytes(packed)
 
     @classmethod
+    @functools.lru_cache(maxsize=32, typed=True)
     @__TRACER.with_span_sync(Tracer.DEBUG, "executor.get_invoked_node")
     def get_invoked_node[SP: Any, BP: Any](
         cls: type[Self], /, call: NodeCall[Any, Any, SP, BP, ExecutorParams]

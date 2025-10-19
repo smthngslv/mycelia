@@ -1,5 +1,5 @@
 import asyncio
-from asyncio import Task
+from asyncio import Task, TaskGroup
 from contextlib import ExitStack
 from typing import Any, ClassVar, Final, Literal, Self, cast, final, overload
 from uuid import UUID, uuid4
@@ -193,29 +193,30 @@ class Interactor:
 
         try:
             with TraceContext.from_bytes(node.trace_context).attach(cls.__TRACER), session_cancelled_event:
-                session_cancelled_event_task: Final[Task] = asyncio.create_task(session_cancelled_event.wait())
-                on_node_enqueued_task: Final[Task] = asyncio.create_task(
-                    cls.__execute_node(node, storage=storage, broker=broker, executor=executor)
-                )
+                task_group: TaskGroup
+                async with TaskGroup() as task_group:
+                    session_cancelled_event_task: Final[Task] = task_group.create_task(session_cancelled_event.wait())
+                    on_node_enqueued_task: Final[Task] = task_group.create_task(
+                        cls.__execute_node(node, storage=storage, broker=broker, executor=executor)
+                    )
 
-                await asyncio.wait(
-                    fs=(session_cancelled_event_task, on_node_enqueued_task), return_when=asyncio.FIRST_COMPLETED
-                )
+                    await asyncio.wait(
+                        fs=(session_cancelled_event_task, on_node_enqueued_task), return_when=asyncio.FIRST_COMPLETED
+                    )
 
-                if session_cancelled_event.is_set:
-                    on_node_enqueued_task.cancel(msg="Session cancelled.")
-                    await session_cancelled_event_task
-                    cls.__TRACER.info("session.cancelled")
-                    return
+                    if session_cancelled_event.is_set:
+                        on_node_enqueued_task.cancel(msg="Session cancelled.")
+                        cls.__TRACER.info("session.cancelled")
+                        return
 
-                session_cancelled_event_task.cancel()
+                    session_cancelled_event_task.cancel()
 
-                try:
-                    await on_node_enqueued_task
+                    try:
+                        await on_node_enqueued_task
 
-                except Exception as exception:
-                    cls.__TRACER.error("node.failed", exception_=exception)
-                    await cls.cancel_session(node.session_id, storage=storage, broker=broker)
+                    except Exception as exception:
+                        cls.__TRACER.error("node.failed", exception_=exception)
+                        await cls.cancel_session(node.session_id, storage=storage, broker=broker)
 
         finally:
             if session_cancelled_event.subscriber_count == 0:

@@ -55,7 +55,7 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
     @classmethod
     @__TRACER.with_span_async(__TRACER.INFO, "rabbitmq_broker.create")
     async def create(cls: type[Self], /, url: str) -> Self:
-        connection: Final[AbstractConnection] = await aio_pika.connect(url)
+        connection: Final[AbstractConnection] = await aio_pika.connect_robust(url)
         channel: Final[AbstractChannel] = await connection.channel()
         node_exchange: Final[AbstractExchange] = await channel.declare_exchange(
             cls.__NODE_EXCHANGE_NAME, ExchangeType.DIRECT, durable=True
@@ -181,11 +181,12 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
         self.__TRACER.set_attributes_to_current_span(
             queue_name=queue_name, is_exclusive=is_exclusive, prefetch_count=prefetch_count, max_priority=max_priority
         )
-        channel: Final[AbstractChannel] = await self.__connection.channel()
 
         arguments: Final[dict[str, Any]] = {}
         if max_priority is not None:
             arguments["x-max-priority"] = max_priority
+
+        channel: Final[AbstractChannel] = await self.__connection.channel()
 
         try:
             await channel.set_qos(prefetch_count)
