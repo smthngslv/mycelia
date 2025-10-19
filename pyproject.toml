@@ -1,6 +1,6 @@
 [project]
 name = "mycelia"
-version = "1.0.0b3"
+version = "1.0.0b4"
 description = """Task-first orchestration for services and agents. Mycelia runs multi-step, dependency-heavy \
 workflows, manages data flow, and connects messaging across components. A clean way to build distributed automation."""
 readme = "./docs/README.md"
@@ -31,11 +31,14 @@ build-backend = "uv_build"
 
 [dependency-groups]
 lint = [
-    "asyncpg-stubs>=0.30.2",
+    # Linters.
     "mypy>=1.18.2",
-    "pydantic>=2.12.2",
     "ruff>=0.14.0",
+    # Plugins.
+    "pydantic>=2.12.2",
     "sqlalchemy[mypy]>=2.0.44",
+    # Stubs.
+    "asyncpg-stubs>=0.30.2",
 ]
 
 [tool.ruff]
