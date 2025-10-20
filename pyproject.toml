@@ -1,6 +1,6 @@
 [project]
 name = "mycelia"
-version = "1.0.0b6"
+version = "1.0.0b7"
 description = """Task-first orchestration for services and agents. Mycelia runs multi-step, dependency-heavy \
 workflows, manages data flow, and connects messaging across components. A clean way to build distributed automation."""
 readme = "./docs/README.md"

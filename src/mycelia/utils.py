@@ -12,7 +12,6 @@ from ormsgpack import (
     OPT_NON_STR_KEYS,
     OPT_PASSTHROUGH_DATACLASS,
     OPT_PASSTHROUGH_ENUM,
-    OPT_PASSTHROUGH_SUBCLASS,
     OPT_PASSTHROUGH_UUID,
     OPT_SERIALIZE_NUMPY,
     Ext,
@@ -143,8 +142,6 @@ class Codec:
             serialization_options |= OPT_PASSTHROUGH_DATACLASS
             # Do not serialize enums implicitly.
             serialization_options |= OPT_PASSTHROUGH_ENUM
-            # Do not serialize subclasses implicitly.
-            serialization_options |= OPT_PASSTHROUGH_SUBCLASS
             # Builtin variant is x2 more expensive.
             serialization_options |= OPT_PASSTHROUGH_UUID
 
@@ -158,12 +155,14 @@ class Codec:
         return ormsgpack.unpackb(value, ext_hook=self._deserialize, option=self._deserialization_options)
 
     def _serialize(self: Self, /, value: Any) -> Any:
-        tag_and_serializer: Final[tuple[int, Callable[[Any], bytes]] | None] = self._serializers.get(type(value))
+        value_type: type
+        for value_type in type(value).mro():
+            tag_and_serializer: tuple[int, Callable[[Any], bytes]] | None = self._serializers.get(value_type)
 
-        if tag_and_serializer is None:
-            raise MsgpackDecodeError
+            if tag_and_serializer is not None:
+                return Ext(tag_and_serializer[0], tag_and_serializer[1](value))
 
-        return Ext(tag_and_serializer[0], tag_and_serializer[1](value))
+        raise MsgpackDecodeError
 
     def _deserialize(self: Self, /, tag: int, value: bytes) -> Any:
         deserializer: Final[Callable[[bytes], Any] | None] = self._deserializers.get(tag)
