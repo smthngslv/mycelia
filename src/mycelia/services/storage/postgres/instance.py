@@ -154,7 +154,7 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
             .values(
                 {
                     NodesTable.id: node.id,
-                    NodesTable.graph_id: node.id,
+                    NodesTable.graph_id: node.graph_id,
                     NodesTable.arguments: node.arguments,
                     NodesTable.trace_context: node.trace_context,
                     NodesTable.broker_params: node.broker_params,
