@@ -1,16 +1,16 @@
 import functools
 from asyncio import Event, Task, TaskGroup
 from collections.abc import Callable, Coroutine, Iterable, Mapping
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import Any, ClassVar, Final, Literal, Self, cast, final, overload
 from uuid import UUID
 
 import ormsgpack
 from ormsgpack import (
-    OPT_DATETIME_AS_TIMESTAMP_EXT,
     OPT_NON_STR_KEYS,
     OPT_PASSTHROUGH_DATACLASS,
+    OPT_PASSTHROUGH_DATETIME,
     OPT_PASSTHROUGH_ENUM,
     OPT_PASSTHROUGH_UUID,
     OPT_SERIALIZE_NUMPY,
@@ -110,14 +110,20 @@ class Codec:
         deserialization_options: int | None = None,
     ) -> None:
         self._serializers: Final[dict[Any, tuple[int, Callable[[Any], bytes]]]] = (
-            {UUID: (0, self._uuid_to_bytes), timedelta: (1, self._timedelta_to_bytes)} if use_default else {}
+            {
+                UUID: (0, self._uuid_to_bytes),
+                timedelta: (1, self._timedelta_to_bytes),
+                datetime: (2, self._datetime_to_bytes),
+            }
+            if use_default
+            else {}
         )
 
         if serializers is not None:
             self._serializers.update(serializers)
 
         self._deserializers: Final[dict[int, Callable[[bytes], Any]]] = (
-            {0: self._bytes_to_uuid, 1: self._bytes_to_timedelta} if use_default else {}
+            {0: self._bytes_to_uuid, 1: self._bytes_to_timedelta, 2: self._bytes_to_datetime} if use_default else {}
         )
 
         if deserializers is not None:
@@ -133,9 +139,8 @@ class Codec:
             # Support any type as key.
             serialization_options |= OPT_NON_STR_KEYS
             deserialization_options |= OPT_NON_STR_KEYS
-            # This variant is x4 more efficient.
-            serialization_options |= OPT_DATETIME_AS_TIMESTAMP_EXT
-            deserialization_options |= OPT_DATETIME_AS_TIMESTAMP_EXT
+            # Builtin variant is x2 more expensive.
+            serialization_options |= OPT_PASSTHROUGH_DATETIME
             # TODO: Check, how efficient this is.
             serialization_options |= OPT_SERIALIZE_NUMPY
             # Do not serialize dataclasses implicitly.
@@ -187,6 +192,18 @@ class Codec:
     @staticmethod
     def _bytes_to_timedelta(value: bytes) -> timedelta:
         return timedelta(seconds=ormsgpack.unpackb(value))
+
+    @staticmethod
+    def _datetime_to_bytes(value: datetime) -> bytes:
+        if value.tzinfo is None:
+            message: Final[str] = "Do not use datetime without timezone."
+            raise RuntimeError(message)
+
+        return ormsgpack.packb(value.timestamp())
+
+    @staticmethod
+    def _bytes_to_datetime(value: bytes) -> datetime:
+        return datetime.fromtimestamp(ormsgpack.unpackb(value), UTC)
 
 
 class Entity(BaseModel):

@@ -60,10 +60,10 @@ class Executor(IExecutor[ExecutorParams]):
     # TODO: Support passing `Node` object somehow.
     __CODEC: ClassVar[Codec] = Codec(
         serializers={
-            DependencyReference: (2, DependencyReference.to_bytes),
-            DependencyReferences: (3, DependencyReferences.to_bytes),
+            DependencyReference: (126, DependencyReference.to_bytes),
+            DependencyReferences: (127, DependencyReferences.to_bytes),
         },
-        deserializers={2: DependencyReference.from_bytes, 3: DependencyReferences.from_bytes},
+        deserializers={126: DependencyReference.from_bytes, 127: DependencyReferences.from_bytes},
     )
 
     @classmethod
