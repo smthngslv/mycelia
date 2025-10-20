@@ -1,6 +1,6 @@
 [project]
 name = "mycelia"
-version = "1.0.0b4"
+version = "1.0.0b6"
 description = """Task-first orchestration for services and agents. Mycelia runs multi-step, dependency-heavy \
 workflows, manages data flow, and connects messaging across components. A clean way to build distributed automation."""
 readme = "./docs/README.md"
@@ -10,6 +10,9 @@ dependencies = [
     "ormsgpack>=1.11.0",
     "pydantic>=2.12.2",
 ]
+
+[project.scripts]
+mycelia-postgres-storage-alembic = "mycelia.services.storage.postgres.migrations:run"
 
 [project.optional-dependencies]
 logfire = [
@@ -266,15 +269,3 @@ plugins = [
     # https://docs.sqlalchemy.org/en/20/orm/extensions/mypy.html.
     "sqlalchemy.ext.mypy.plugin",
 ]
-
-[[tool.mypy.overrides]]
-module = [
-    # https://github.com/msgpack/msgpack-python/issues/448.
-    "msgpack.*",
-]
-# https://mypy.readthedocs.io/en/stable/config_file.html#confval-ignore_missing_imports.
-ignore_missing_imports = true
-
-# https://alembic.sqlalchemy.org/en/latest/tutorial.html#using-pyproject-toml-for-configuration.
-[tool.alembic]
-script_location = "%(here)s/src/mycelia/services/storage/postgres/migrations"

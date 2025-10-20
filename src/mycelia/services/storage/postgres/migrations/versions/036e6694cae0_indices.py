@@ -19,8 +19,6 @@ down_revision: Final[str | None] = "797c81c201d2"
 branch_labels: Final[str | Sequence[str] | None] = None
 depends_on: Final[str | Sequence[str] | None] = None
 
-SCHEMA_NAME: Final[str] = "mycelia"
-
 
 def upgrade() -> None:
     op.create_index(
@@ -28,7 +26,6 @@ def upgrade() -> None:
         table_name="sessions",
         columns=("id",),
         unique=False,
-        schema=SCHEMA_NAME,
         postgresql_where=sqlalchemy.text("cancelled_at IS NULL"),
     )
     op.create_index(
@@ -36,7 +33,6 @@ def upgrade() -> None:
         table_name="graphs",
         columns=("id",),
         unique=False,
-        schema=SCHEMA_NAME,
         postgresql_where=sqlalchemy.text("result IS NULL"),
     )
     op.create_index(
@@ -44,63 +40,50 @@ def upgrade() -> None:
         table_name="graphs",
         columns=("session_id",),
         unique=False,
-        schema=SCHEMA_NAME,
         postgresql_where=sqlalchemy.text("result IS NULL"),
     )
-    op.create_index(
-        index_name="ix_nodes_graph_id", table_name="nodes", columns=("graph_id",), unique=False, schema=SCHEMA_NAME
-    )
+    op.create_index(index_name="ix_nodes_graph_id", table_name="nodes", columns=("graph_id",), unique=False)
     op.create_index(
         index_name="ix_nodes_pending_dependency_count",
         table_name="nodes",
         columns=("pending_dependency_count",),
         unique=False,
-        schema=SCHEMA_NAME,
     )
     op.create_index(
-        index_name="ix_dependencies_graph_id",
-        table_name="dependencies",
-        columns=("graph_id",),
-        unique=False,
-        schema=SCHEMA_NAME,
+        index_name="ix_dependencies_graph_id", table_name="dependencies", columns=("graph_id",), unique=False
     )
     op.create_index(
         index_name="ix_dependencies_node_id_graph_id",
         table_name="dependencies",
         columns=("node_id", "graph_id"),
         unique=False,
-        schema=SCHEMA_NAME,
     )
     op.create_index(
         index_name="ix_dependencies_node_id_is_data",
         table_name="dependencies",
         columns=("node_id", "is_data"),
         unique=False,
-        schema=SCHEMA_NAME,
     )
 
 
 def downgrade() -> None:
-    op.drop_index(index_name="ix_dependencies_node_id_is_data", table_name="dependencies", schema=SCHEMA_NAME)
-    op.drop_index(index_name="ix_dependencies_node_id_graph_id", table_name="dependencies", schema=SCHEMA_NAME)
-    op.drop_index(index_name="ix_dependencies_graph_id", table_name="dependencies", schema=SCHEMA_NAME)
-    op.drop_index(index_name="ix_nodes_pending_dependency_count", table_name="nodes", schema=SCHEMA_NAME)
-    op.drop_index(index_name="ix_nodes_graph_id", table_name="nodes", schema=SCHEMA_NAME)
+    op.drop_index(index_name="ix_dependencies_node_id_is_data", table_name="dependencies")
+    op.drop_index(index_name="ix_dependencies_node_id_graph_id", table_name="dependencies")
+    op.drop_index(index_name="ix_dependencies_graph_id", table_name="dependencies")
+    op.drop_index(index_name="ix_nodes_pending_dependency_count", table_name="nodes")
+    op.drop_index(index_name="ix_nodes_graph_id", table_name="nodes")
     op.drop_index(
         index_name="ix_graphs_session_id_not_finished",
         table_name="graphs",
-        schema=SCHEMA_NAME,
         postgresql_where=sqlalchemy.text("result IS NULL"),
     )
     op.drop_index(
         index_name="ix_graphs_result_not_finished",
         table_name="graphs",
-        schema=SCHEMA_NAME,
         postgresql_where=sqlalchemy.text("result IS NULL"),
     )
     op.drop_index(
         index_name="ix_sessions_not_cancelled",
         table_name="sessions",
-        schema=SCHEMA_NAME,
         postgresql_where=sqlalchemy.text("cancelled_at IS NULL"),
     )

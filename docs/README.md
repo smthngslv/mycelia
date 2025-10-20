@@ -32,7 +32,7 @@ docker compose -f ./docs/docker-compose.yaml up -d
 Initialize `postgres`:
 
 ```shell
-alembic -x url=postgresql+asyncpg://mycelia:mycelia@localhost/mycelia upgrade head
+mycelia-postgres-storage-alembic -x url=postgresql+asyncpg://mycelia:mycelia@localhost/mycelia upgrade head
 ```
 
 Run example (server):

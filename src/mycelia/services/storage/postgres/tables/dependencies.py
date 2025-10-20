@@ -20,8 +20,8 @@ class DependenciesTable(Table):
     graph_id: Mapped[UUID] = mapped_column(ForeignKey(column="graphs.id", ondelete="CASCADE"), primary_key=True)
     is_data: Mapped[bool] = mapped_column(BOOLEAN)
 
-    __table_args__: ClassVar[tuple[Index, ...]] = (  # type: ignore[misc]
-        Index("ix_mycelia_dependencies_node_id_is_data", node_id, is_data),
-        Index("ix_mycelia_dependencies_graph_id", graph_id),
-        Index("ix_mycelia_dependencies_node_id_graph_id", node_id, graph_id),
+    __table_args__: tuple[Index, ...] = (  # type: ignore[misc]
+        Index("ix_dependencies_node_id_is_data", node_id, is_data),
+        Index("ix_dependencies_graph_id", graph_id),
+        Index("ix_dependencies_node_id_graph_id", node_id, graph_id),
     )

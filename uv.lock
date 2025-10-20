@@ -453,7 +453,7 @@ wheels = [
 
 [[package]]
 name = "mycelia"
-version = "1.0.0b4"
+version = "1.0.0b6"
 source = { editable = "." }
 dependencies = [
     { name = "logfire-api" },

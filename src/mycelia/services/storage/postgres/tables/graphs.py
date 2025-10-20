@@ -22,6 +22,6 @@ class GraphsTable(Table):
     result: Mapped[bytes | None] = mapped_column(BYTEA)
 
     __table_args__: ClassVar[tuple[Index, ...]] = (  # type: ignore[misc]
-        Index("ix_mycelia_graphs_session_id_not_finished", session_id, postgresql_where=result.is_(other=None)),
-        Index("ix_mycelia_graphs_result_not_finished", id, postgresql_where=result.is_(other=None)),
+        Index("ix_graphs_session_id_not_finished", session_id, postgresql_where=result.is_(other=None)),
+        Index("ix_graphs_result_not_finished", id, postgresql_where=result.is_(other=None)),
     )

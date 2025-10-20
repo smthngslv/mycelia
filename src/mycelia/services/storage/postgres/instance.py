@@ -46,9 +46,12 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
         return PostgresStorageParams.from_bytes(packed)
 
     @__TRACER.with_span_sync(Tracer.INFO, "postgres_storage.create")
-    def __init__(self, /, url: str) -> None:
+    def __init__(self, /, url: str, *, schema: str = "mycelia") -> None:
         self.__engine: Final[AsyncEngine] = create_async_engine(
-            url, isolation_level="AUTOCOMMIT", skip_autocommit_rollback=True
+            url,
+            isolation_level="AUTOCOMMIT",
+            skip_autocommit_rollback=True,
+            connect_args={"server_settings": {"search_path": schema}},
         )
         self.__session_maker: Final[async_sessionmaker[AsyncSession]] = async_sessionmaker(self.__engine)
 

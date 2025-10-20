@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 from alembic import context
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import AsyncConnection, async_engine_from_config
+from sqlalchemy.sql.ddl import CreateSchema
 
 from mycelia.services.storage.postgres.tables.base import Table
 
@@ -18,7 +19,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations_online(connection: Connection, /) -> None:
-    context.configure(connection, target_metadata=Table.metadata, include_schemas=True)
+    context.configure(connection, target_metadata=Table.metadata)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -29,14 +30,19 @@ async def run_migrations_online() -> None:
         message: Final[str] = "Please specify the database URL."
         raise RuntimeError(message)
 
+    schema: Final[str] = cli_arguments.get("schema", "mycelia")
     engine: Final[AsyncEngine] = async_engine_from_config(
-        cast("dict[str, Any]", context.config.toml_alembic_config), url=cli_arguments["url"]
+        cast("dict[str, Any]", context.config.toml_alembic_config),
+        url=cli_arguments["url"],
+        connect_args={"server_settings": {"search_path": schema}},
     )
 
     try:
         connection: AsyncConnection
         async with engine.connect() as connection:
+            await connection.execute(CreateSchema(schema, if_not_exists=True))
             await connection.run_sync(do_run_migrations_online)
+            await connection.commit()
 
     finally:
         await engine.dispose()
