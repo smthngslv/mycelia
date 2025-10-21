@@ -1,6 +1,6 @@
 import functools
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar, Final, Self, final
 from uuid import UUID, uuid4
 
@@ -33,6 +33,7 @@ class RabbitMQBrokerParams(Entity):
     queue_prefetch_count: int = Field(default=0, ge=0)
     queue_is_exclusive: bool = Field(default=False)
     queue_max_priority: int | None = Field(default=None, ge=1)
+    queue_consumer_timeout: timedelta | None = Field(default=None)
     event_priority: int | None = Field(default=None, ge=0)
 
 
@@ -133,6 +134,7 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
             is_exclusive=params.queue_is_exclusive,
             prefetch_count=params.queue_prefetch_count,
             max_priority=params.queue_max_priority,
+            consumer_timeout=params.queue_consumer_timeout,
         )
         self.__TRACER.set_attributes_to_current_span(consumer_tag=consumer_tag)
         self.__consumers[callback] = queue, consumer_tag
@@ -177,6 +179,7 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
         is_exclusive: bool = False,
         prefetch_count: int = 0,
         max_priority: int | None = None,
+        consumer_timeout: timedelta | None = None,
     ) -> tuple[AbstractQueue, str]:
         self.__TRACER.set_attributes_to_current_span(
             queue_name=queue_name, is_exclusive=is_exclusive, prefetch_count=prefetch_count, max_priority=max_priority
@@ -185,6 +188,9 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
         arguments: Final[dict[str, Any]] = {}
         if max_priority is not None:
             arguments["x-max-priority"] = max_priority
+
+        if consumer_timeout is not None:
+            arguments["x-consumer-timeout"] = consumer_timeout.total_seconds() * 1000
 
         channel: Final[AbstractChannel] = await self.__connection.channel()
 
