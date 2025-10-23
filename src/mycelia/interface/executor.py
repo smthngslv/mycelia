@@ -75,7 +75,10 @@ class Executor(IExecutor[ExecutorParams]):
         return ExecutorParams.from_bytes(packed)
 
     @classmethod
-    @functools.lru_cache(maxsize=32, typed=True)
+    # TODO: Here some smart cache is necessary to be able to handle long chains of deps (i.e. event streaming).
+    #  Maybe track alive `NodeCall` objects and keep them in cache, and when the object is collected by gc, remove it
+    #  from cache. This can be done with WeakRef.
+    @functools.lru_cache(maxsize=1024, typed=True)
     @__TRACER.with_span_sync(Tracer.DEBUG, "executor.get_invoked_node")
     def get_invoked_node[SP: Any, BP: Any](
         cls: type[Self], /, call: NodeCall[Any, Any, SP, BP, ExecutorParams]
