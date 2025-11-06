@@ -344,10 +344,12 @@ class EventWithSubscribers:
 class SingleUseLockWithValue[ValueType: Any]:
     __slots__: ClassVar[tuple[str, ...]] = ("__event", "__is_used", "__value")
 
-    def __init__(self: Self, /, value: ValueType) -> None:
+    def __init__(self: Self, /, value: ValueType, *, is_used: bool = False) -> None:
         self.__event: Final[Event] = Event()
         self.__value: Final[ValueType] = value
-        self.__is_used: bool = False
+        self.__is_used: bool = is_used
+        if self.__is_used:
+            self.__event.set()
 
     @property
     def value(self: Self, /) -> ValueType:

@@ -78,7 +78,10 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
         graph: CreatedGraph | None = None,
         session: CreatedSession | None = None,
     ) -> bool:
-        self.__TRACER.set_attributes_to_current_span(params=params, node=node, graph=graph, session=session)
+        self.__TRACER.set_attributes_to_current_span(
+            Tracer.DEBUG, params=params, node=node, graph=graph, session=session
+        )
+
         ctes: Final[list[CTE]] = []
         updated_parent_node_cte: CTE | None = None
         pending_dependencies_cte: CTE | None = None
@@ -180,8 +183,9 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
             else sqlalchemy.select(inserted_node_cte)
         ).add_cte(*ctes)
 
-        if self.__TRACER.level == Tracer.TRACE:
-            self.__TRACER.set_attributes_to_current_span(sql=self.__get_sql(statement))
+        # Additional check is needed to avoid unnecessary sql rendering.
+        if self.__TRACER.level <= Tracer.TRACE:
+            self.__TRACER.set_attributes_to_current_span(Tracer.TRACE, sql=self.__get_sql(statement))
 
         db_session: AsyncSession
         async with self.__session_maker() as db_session:
@@ -191,12 +195,12 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
         if updated_parent_node_cte is not None and len(flags) == 1:
             raise NodeNodeFoundError(cast("UUID", node.parent_id))
 
-        self.__TRACER.set_attributes_to_current_span(is_ready=flags[0])
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, is_ready=flags[0])
         return flags[0]
 
     @__TRACER.with_span_async(Tracer.DEBUG, "postgres_storage.start_node")
     async def start_node(self: Self, /, id_: UUID) -> StartedNode:
-        self.__TRACER.set_attributes_to_current_span(id=id_)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, id=id_)
 
         original_started_node_cte: Final[CTE] = (
             sqlalchemy.select(
@@ -256,8 +260,9 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
             .add_cte(updated_started_node_cte)
         )
 
-        if self.__TRACER.level == Tracer.TRACE:
-            self.__TRACER.set_attributes_to_current_span(sql=self.__get_sql(statement))
+        # Additional check is needed to avoid unnecessary sql rendering.
+        if self.__TRACER.level <= Tracer.TRACE:
+            self.__TRACER.set_attributes_to_current_span(Tracer.TRACE, sql=self.__get_sql(statement))
 
         db_session: AsyncSession
         async with self.__session_maker() as db_session:
@@ -278,12 +283,12 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
             dependencies=dict(zip(nodes[0]["dependency_graph_ids"], nodes[0]["dependency_graph_results"], strict=True)),
             executor_params=nodes[0]["executor_params"],
         )
-        self.__TRACER.set_attributes_to_current_span(node=node)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, node=node)
         return node
 
     @__TRACER.with_span_async(Tracer.DEBUG, "postgres_storage.complete_node")
     async def complete_node(self: Self, /, node: CompletedNode) -> list[ReadyNode]:
-        self.__TRACER.set_attributes_to_current_span(node=node)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, node=node)
 
         statement: Final[Select] = sqlalchemy.select(
             sqlalchemy.func.mycelia.complete_node(
@@ -293,8 +298,9 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
             .alias(name="ready_nodes")
         )
 
-        if self.__TRACER.level == Tracer.TRACE:
-            self.__TRACER.set_attributes_to_current_span(sql=self.__get_sql(statement))
+        # Additional check is needed to avoid unnecessary sql rendering.
+        if self.__TRACER.level <= Tracer.TRACE:
+            self.__TRACER.set_attributes_to_current_span(Tracer.TRACE, sql=self.__get_sql(statement))
 
         db_session: AsyncSession
         async with self.__session_maker() as db_session:
@@ -308,12 +314,12 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
                 raise
 
         ready_nodes: Final[list[ReadyNode]] = [ReadyNode(**ready_node) for ready_node in result.mappings().all()]
-        self.__TRACER.set_attributes_to_current_span(ready_nodes=ready_nodes)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, ready_nodes=ready_nodes)
         return ready_nodes
 
     @__TRACER.with_span_async(Tracer.DEBUG, "postgres_storage.cancel_session")
     async def cancel_session(self: Self, /, id_: UUID) -> bool:
-        self.__TRACER.set_attributes_to_current_span(id=id_)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, id=id_)
 
         is_running: Final[Exists] = (
             sqlalchemy.select(1)
@@ -340,8 +346,9 @@ class PostgresStorage(IStorage[PostgresStorageParams]):
             ),
         )
 
-        if self.__TRACER.level == Tracer.TRACE:
-            self.__TRACER.set_attributes_to_current_span(sql=self.__get_sql(statement))
+        # Additional check is needed to avoid unnecessary sql rendering.
+        if self.__TRACER.level <= Tracer.TRACE:
+            self.__TRACER.set_attributes_to_current_span(Tracer.TRACE, sql=self.__get_sql(statement))
 
         db_session: AsyncSession
         async with self.__session_maker() as db_session:

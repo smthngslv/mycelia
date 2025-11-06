@@ -1,4 +1,5 @@
 import contextlib
+import enum
 import functools
 import inspect
 from collections.abc import Callable, Coroutine, Iterator, Mapping, Set as AbstractSet
@@ -31,14 +32,14 @@ logfire_api.add_non_user_code_prefix(__file__)
 
 
 @final
-class TraceLevel(str, Enum):
-    TRACE = "trace"
-    DEBUG = "debug"
-    INFO = "info"
-    NOTICE = "notice"
-    WARNING = "warning"
-    ERROR = "error"
-    FATAL = "fatal"
+class TraceLevel(int, Enum):
+    TRACE = enum.auto()
+    DEBUG = enum.auto()
+    INFO = enum.auto()
+    NOTICE = enum.auto()
+    WARNING = enum.auto()
+    ERROR = enum.auto()
+    FATAL = enum.auto()
 
 
 @final
@@ -123,14 +124,13 @@ class Tracer:
             tags=tuple(tags) if tags is not None else (), custom_scope_suffix=scope
         )
 
-    @staticmethod
-    def set_attributes_to_current_span(**attributes: Any) -> None:
-        if get_current_span is not None:
-            set_user_attributes_on_raw_span(get_current_span(), attributes)
-
     @property
     def level(self: Self, /) -> TraceLevel:
         return self.__TRACE_LEVELS[self.__logfire.config.min_level]
+
+    def set_attributes_to_current_span(self: Self, level_: TraceLevel, /, **attributes: Any) -> None:
+        if get_current_span is not None and self.level <= level_:
+            set_user_attributes_on_raw_span(get_current_span(), attributes)
 
     def get_child(self: Self, scope: str, /, *, tags: AbstractSet[str] | None = None) -> Self:
         # Scope is not propagated by logfire, it has to be done manually.
@@ -149,7 +149,7 @@ class Tracer:
         if tags_ is None:
             tags_ = set()
 
-        self.__logfire.log(level.value, message, attributes, tags=tuple(tags_), exc_info=exception_)
+        self.__logfire.log(level.name.lower(), message, attributes, tags=tuple(tags_), exc_info=exception_)
 
     def trace(
         self: Self,
@@ -244,7 +244,9 @@ class Tracer:
         if tags_ is None:
             tags_ = set()
 
-        return self.__logfire.span(message_, _tags=tuple(tags_), _span_name=name, _level=level.value, **attributes)
+        return self.__logfire.span(
+            message_, _tags=tuple(tags_), _span_name=name, _level=level.name.lower(), **attributes
+        )
 
     def with_span_async[**P, R](
         self: Self,
@@ -268,7 +270,7 @@ class Tracer:
             @functools.wraps(function)
             async def _wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
                 with self.__logfire.span(
-                    message_, _tags=tuple(tags_), _span_name=name, _level=level.value, **attributes
+                    message_, _tags=tuple(tags_), _span_name=name, _level=level.name.lower(), **attributes
                 ):
                     return await function(*args, **kwargs)
 
@@ -298,7 +300,7 @@ class Tracer:
             @functools.wraps(function)
             def _wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
                 with self.__logfire.span(
-                    message_, _tags=tuple(tags_), _span_name=name, _level=level.value, **attributes
+                    message_, _tags=tuple(tags_), _span_name=name, _level=level.name.lower(), **attributes
                 ):
                     return function(*args, **kwargs)
 

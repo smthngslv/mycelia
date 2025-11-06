@@ -84,6 +84,7 @@ class Executor(IExecutor[ExecutorParams]):
         cls: type[Self], /, call: NodeCall[Any, Any, SP, BP, ExecutorParams]
     ) -> InvokedNode[SP, BP, ExecutorParams]:
         cls.__TRACER.set_attributes_to_current_span(
+            Tracer.DEBUG,
             id=call.id,
             arguments=call.arguments,
             storage_params=call.node.storage_params,
@@ -130,7 +131,7 @@ class Executor(IExecutor[ExecutorParams]):
         invoked_dependencies: Final[dict[InvokedNode[SP, BP, ExecutorParams], bool]] = {
             cls.get_invoked_node(dependency): is_data for dependency, is_data in dependencies.items()
         }
-        cls.__TRACER.set_attributes_to_current_span(dependencies=invoked_dependencies)
+        cls.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, dependencies=invoked_dependencies)
         return InvokedNode(
             id=call.id,
             arguments=cls.__CODEC.to_bytes(arguments),
@@ -163,17 +164,18 @@ class Executor(IExecutor[ExecutorParams]):
         node: RunningNode,
         invoke_node_callback: Callable[[InvokedNode[Any, Any, ExecutorParams], bool], Awaitable[UUID]],
     ) -> InvokedNode | CompletedNode | None:
-        self.__TRACER.set_attributes_to_current_span(node=node)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, node=node)
         arguments: Final[dict[int, Any]] = self.__CODEC.from_bytes(node.arguments)
-        self.__TRACER.set_attributes_to_current_span(raw_arguments=arguments)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, raw_arguments=arguments)
         node_handler: Final[Node[Any, Any, Any, Any, ExecutorParams]] = self.__nodes[params.node_id]
         self.__TRACER.set_attributes_to_current_span(
+            Tracer.DEBUG,
             node_handler={
                 "signature": node_handler.signature,
                 "storage_params": node_handler.storage_params,
                 "broker_params": node_handler.broker_params,
                 "executor_params": node_handler.executor_params,
-            }
+            },
         )
         node_function: Final[Callable[[RunContext[Any, Any, ExecutorParams], *tuple[Any, ...]], Awaitable]] = cast(
             "Callable[[RunContext[Any, Any, ExecutorParams], *tuple[Any, ...]], Awaitable]", node_handler.function
@@ -216,7 +218,7 @@ class Executor(IExecutor[ExecutorParams]):
                 if index in arguments
             ),
         )
-        self.__TRACER.set_attributes_to_current_span(resolved_arguments=bound_arguments.arguments)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, resolved_arguments=bound_arguments.arguments)
 
         async def invoke_node(
             node_call: NodeCall[Any, Any, Any, Any, ExecutorParams],
@@ -234,12 +236,12 @@ class Executor(IExecutor[ExecutorParams]):
         )
 
         if return_value == PAUSE_MARKER:
-            self.__TRACER.set_attributes_to_current_span(is_paused=True)
+            self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, is_paused=True)
             return None
 
         if isinstance(return_value, NodeCall):
             return self.get_invoked_node(return_value)
 
-        self.__TRACER.set_attributes_to_current_span(return_value=return_value)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, return_value=return_value)
         serialized_return_value: Final[Any] = node_handler.return_value_type_adapter.dump_python(return_value)
         return CompletedNode(id=node.id, result=self.__CODEC.to_bytes(serialized_return_value))

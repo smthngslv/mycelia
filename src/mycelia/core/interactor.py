@@ -1,5 +1,6 @@
 import asyncio
 from asyncio import Task, TaskGroup
+from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any, ClassVar, Final, Literal, Self, cast, final, overload
 from uuid import UUID, uuid4
@@ -42,6 +43,8 @@ class Interactor:
         executor: IExecutor[EP] | type[IExecutor[EP]],
         is_first_node: Literal[False] = False,
         context: Context,
+        get_node_trace_message: Callable[[InvokedNode[SP, BP, EP]], str] | None = None,
+        get_graph_trace_message: Callable[[InvokedNode[SP, BP, EP]], str] | None = None,
     ) -> UUID:
         raise NotImplementedError
 
@@ -57,6 +60,8 @@ class Interactor:
         executor: IExecutor[EP] | type[IExecutor[EP]],
         is_first_node: Literal[True] = True,
         context: Context | None = None,
+        get_node_trace_message: Callable[[InvokedNode[SP, BP, EP]], str] | None = None,
+        get_graph_trace_message: Callable[[InvokedNode[SP, BP, EP]], str] | None = None,
     ) -> UUID:
         raise NotImplementedError
 
@@ -73,6 +78,8 @@ class Interactor:
         executor: IExecutor[EP] | type[IExecutor[EP]],
         is_first_node: bool = True,
         context: Context | None = None,
+        get_node_trace_message: Callable[[InvokedNode[SP, BP, EP]], str] | None = None,
+        get_graph_trace_message: Callable[[InvokedNode[SP, BP, EP]], str] | None = None,
     ) -> UUID:
         is_created: EventWithValue[UUID] | None = context.created_nodes.get(node.id) if context is not None else None
         if is_created is not None:
@@ -88,8 +95,15 @@ class Interactor:
             exit_stack.enter_context(is_created)
 
             if is_first_node:
-                # TODO: Support user mapper to add attributes to the graph.
-                exit_stack.enter_context(cls.__TRACER.span(Tracer.INFO, "graph.process", id=node.id))
+                # TODO: Support proper user mapper to add attributes to the graph.
+                exit_stack.enter_context(
+                    cls.__TRACER.span(
+                        Tracer.INFO,
+                        "graph.process",
+                        message_=get_graph_trace_message(node) if get_graph_trace_message is not None else None,
+                        id=node.id,
+                    )
+                )
 
             elif context is not None:
                 # Restore graph context, in case we are handling not very first node.
@@ -101,8 +115,15 @@ class Interactor:
             # Ether propagated or newly created.
             graph_trace_context: Final[bytes] = TraceContext.get_current().to_bytes()
 
-            # TODO: Support user mapper to add attributes to the node.
-            exit_stack.enter_context(cls.__TRACER.span(Tracer.INFO, "node.process", id=node.id))
+            # TODO: Support proper user mapper to add attributes to the node.
+            exit_stack.enter_context(
+                cls.__TRACER.span(
+                    Tracer.INFO,
+                    "node.process",
+                    message_=get_node_trace_message(node) if get_node_trace_message is not None else None,
+                    id=node.id,
+                )
+            )
             node_trace_context: Final[bytes] = TraceContext.get_current().to_bytes()
 
             if context is None:
@@ -115,7 +136,15 @@ class Interactor:
                 )
 
             await gather(
-                cls.invoke_node(dependency, context=context, storage=storage, broker=broker, executor=executor)
+                cls.invoke_node(
+                    dependency,
+                    context=context,
+                    storage=storage,
+                    broker=broker,
+                    executor=executor,
+                    get_node_trace_message=get_node_trace_message,
+                    get_graph_trace_message=get_graph_trace_message,
+                )
                 if dependency.id not in context.created_nodes
                 else context.created_nodes[dependency.id].wait()
                 for dependency in node.dependencies
@@ -183,8 +212,16 @@ class Interactor:
         cls.__TRACER.info("session.canceled", id=id_)
 
     @classmethod
-    async def on_node_enqueued(
-        cls: type[Self], /, node: EnqueuedNode, *, storage: IStorage, broker: IBroker, executor: IExecutor
+    async def on_node_enqueued(  # noqa: PLR0913
+        cls: type[Self],
+        /,
+        node: EnqueuedNode,
+        *,
+        storage: IStorage,
+        broker: IBroker,
+        executor: IExecutor,
+        get_node_trace_message: Callable[[InvokedNode], str] | None = None,
+        get_graph_trace_message: Callable[[InvokedNode], str] | None = None,
     ) -> None:
         session_cancelled_event: Final[EventWithSubscribers] = cls.__SESSIONS.get(
             node.session_id, EventWithSubscribers()
@@ -197,7 +234,14 @@ class Interactor:
                 async with TaskGroup() as task_group:
                     session_cancelled_event_task: Final[Task] = task_group.create_task(session_cancelled_event.wait())
                     on_node_enqueued_task: Final[Task] = task_group.create_task(
-                        cls.__execute_node(node, storage=storage, broker=broker, executor=executor)
+                        cls.__execute_node(
+                            node,
+                            storage=storage,
+                            broker=broker,
+                            executor=executor,
+                            get_node_trace_message=get_node_trace_message,
+                            get_graph_trace_message=get_graph_trace_message,
+                        )
                     )
 
                     await asyncio.wait(
@@ -228,7 +272,7 @@ class Interactor:
             cls.__SESSIONS[id_].set()
 
     @classmethod
-    async def __execute_node[SP: Any, BP: Any, EP: Any](
+    async def __execute_node[SP: Any, BP: Any, EP: Any](  # noqa: PLR0913
         cls: type[Self],
         /,
         enqueued_node: EnqueuedNode,
@@ -236,21 +280,30 @@ class Interactor:
         storage: IStorage[SP],
         broker: IBroker[BP],
         executor: IExecutor[EP],
+        get_node_trace_message: Callable[[InvokedNode[SP, BP, EP]], str] | None = None,
+        get_graph_trace_message: Callable[[InvokedNode[SP, BP, EP]], str] | None = None,
     ) -> None:
         started_node: Final[StartedNode] = await storage.start_node(enqueued_node.id)
-        cls.__TRACER.set_attributes_to_current_span(node=started_node)
+        cls.__TRACER.set_attributes_to_current_span(Tracer.INFO, node=started_node)
 
         context: Final[Context] = Context(
             node_id=started_node.id,
             graph_id=started_node.graph_id,
-            session_id=SingleUseLockWithValue(uuid4()),
+            # Session already created, since current node is already executing.
+            session_id=SingleUseLockWithValue(enqueued_node.session_id, is_used=True),
             graph_trace_context=TraceContext.from_bytes(started_node.graph_trace_context),
             created_nodes={},
         )
 
         async def invoke_node(node: InvokedNode[SP, BP, EP], is_new_session: bool) -> UUID:  # noqa: FBT001
             return await cls.invoke_node(
-                node, context=None if is_new_session else context, storage=storage, broker=broker, executor=executor
+                node,
+                context=None if is_new_session else context,
+                storage=storage,
+                broker=broker,
+                executor=executor,
+                get_node_trace_message=get_node_trace_message,
+                get_graph_trace_message=get_graph_trace_message,
             )
 
         result: Final[InvokedNode | CompletedNode | None] = await executor.execute_node(
@@ -274,5 +327,12 @@ class Interactor:
             return
 
         await cls.invoke_node(
-            result, is_first_node=False, context=context, storage=storage, broker=broker, executor=executor
+            result,
+            is_first_node=False,
+            context=context,
+            storage=storage,
+            broker=broker,
+            executor=executor,
+            get_node_trace_message=get_node_trace_message,
+            get_graph_trace_message=get_graph_trace_message,
         )

@@ -82,7 +82,7 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
 
     @__TRACER.with_span_async(__TRACER.DEBUG, "rabbitmq_broker.publish_node_enqueued")
     async def publish_node_enqueued(self: Self, /, params: RabbitMQBrokerParams, node: EnqueuedNode) -> None:
-        self.__TRACER.set_attributes_to_current_span(node=node, params=params)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, node=node, params=params)
         receipt: Final[ConfirmationFrameType | None] = await self.__node_exchange.publish(
             message=Message(
                 body=node.id.bytes + node.session_id.bytes + node.trace_context,
@@ -102,7 +102,7 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
 
     @__TRACER.with_span_async(__TRACER.DEBUG, "rabbitmq_broker.publish_session_cancelled")
     async def publish_session_cancelled(self: Self, /, id_: UUID) -> None:
-        self.__TRACER.set_attributes_to_current_span(id=id_)
+        self.__TRACER.set_attributes_to_current_span(Tracer.DEBUG, id=id_)
         receipt: Final[ConfirmationFrameType | None] = await self.__control_exchange.publish(
             message=Message(
                 id_.bytes,
@@ -123,7 +123,7 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
     async def add_on_node_enqueued_callback(
         self: Self, /, params: RabbitMQBrokerParams, callback: OnNodeEnqueuedCallback
     ) -> None:
-        self.__TRACER.set_attributes_to_current_span(callback=callback, params=params)
+        self.__TRACER.set_attributes_to_current_span(Tracer.INFO, callback=callback, params=params)
 
         queue: AbstractQueue
         consumer_tag: str
@@ -136,13 +136,13 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
             max_priority=params.queue_max_priority,
             consumer_timeout=params.queue_consumer_timeout,
         )
-        self.__TRACER.set_attributes_to_current_span(consumer_tag=consumer_tag)
+        self.__TRACER.set_attributes_to_current_span(Tracer.INFO, consumer_tag=consumer_tag)
         self.__consumers[callback] = queue, consumer_tag
 
     @__TRACER.with_span_async(__TRACER.INFO, "rabbitmq_broker.add_on_session_cancelled_callback")
     async def add_on_session_cancelled_callback(self: Self, /, callback: OnSessionCancelledCallback) -> None:
         queue_name: Final[str] = f"control-{uuid4()}"
-        self.__TRACER.set_attributes_to_current_span(queue_name=queue_name, callback=callback)
+        self.__TRACER.set_attributes_to_current_span(Tracer.INFO, queue_name=queue_name, callback=callback)
 
         queue: AbstractQueue
         consumer_tag: str
@@ -152,16 +152,16 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
             functools.partial(self.__session_cancelled_callback_wrapper, callback),
             is_exclusive=True,
         )
-        self.__TRACER.set_attributes_to_current_span(consumer_tag=consumer_tag)
+        self.__TRACER.set_attributes_to_current_span(Tracer.INFO, consumer_tag=consumer_tag)
         self.__consumers[callback] = queue, consumer_tag
 
     @__TRACER.with_span_async(__TRACER.INFO, "rabbitmq_broker.remove_callback")
     async def remove_callback(self: Self, /, callback: OnNodeEnqueuedCallback | OnSessionCancelledCallback) -> None:
-        self.__TRACER.set_attributes_to_current_span(callback=callback)
+        self.__TRACER.set_attributes_to_current_span(Tracer.INFO, callback=callback)
         queue: AbstractQueue
         consumer_tag: str
         queue, consumer_tag = self.__consumers.pop(callback)
-        self.__TRACER.set_attributes_to_current_span(queue_name=queue.name, consumer_tag=consumer_tag)
+        self.__TRACER.set_attributes_to_current_span(Tracer.INFO, queue_name=queue.name, consumer_tag=consumer_tag)
         await queue.channel.close()
 
     @__TRACER.with_span_async(__TRACER.INFO, "rabbitmq_broker.shutdown")
@@ -182,7 +182,11 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
         consumer_timeout: timedelta | None = None,
     ) -> tuple[AbstractQueue, str]:
         self.__TRACER.set_attributes_to_current_span(
-            queue_name=queue_name, is_exclusive=is_exclusive, prefetch_count=prefetch_count, max_priority=max_priority
+            Tracer.TRACE,
+            queue_name=queue_name,
+            is_exclusive=is_exclusive,
+            prefetch_count=prefetch_count,
+            max_priority=max_priority,
         )
 
         arguments: Final[dict[str, Any]] = {}
@@ -208,14 +212,14 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
             await channel.close()
             raise
 
-        self.__TRACER.set_attributes_to_current_span(consumer_tag=consumer_tag)
+        self.__TRACER.set_attributes_to_current_span(Tracer.TRACE, consumer_tag=consumer_tag)
         return queue, consumer_tag
 
     @__TRACER.with_span_async(__TRACER.TRACE, "rabbitmq_broker.__node_enqueued_callback_wrapper")
     async def __node_enqueued_callback_wrapper(
         self: Self, /, callback: OnNodeEnqueuedCallback, message: AbstractIncomingMessage
     ) -> None:
-        self.__TRACER.set_attributes_to_current_span(meessage=message)
+        self.__TRACER.set_attributes_to_current_span(Tracer.TRACE, meessage=message)
 
         try:
             await callback(
@@ -237,7 +241,7 @@ class RabbitMQBroker(IBroker[RabbitMQBrokerParams]):
     async def __session_cancelled_callback_wrapper(
         self: Self, /, callback: OnSessionCancelledCallback, message: AbstractIncomingMessage
     ) -> None:
-        self.__TRACER.set_attributes_to_current_span(meessage=message)
+        self.__TRACER.set_attributes_to_current_span(Tracer.TRACE, meessage=message)
 
         try:
             await callback(UUID(bytes=message.body))

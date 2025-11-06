@@ -27,7 +27,12 @@ class Client[SP: Any, BP: Any]:
     @__TRACER.with_span_async(Tracer.INFO, "client.start_session")
     async def start_session(self: Self, node_call: NodeCall[Any, Any, SP, BP, ExecutorParams], /) -> UUID:
         return await Interactor.invoke_node(
-            node=Executor.get_invoked_node(node_call), storage=self.__storage, broker=self.__broker, executor=Executor
+            node=Executor.get_invoked_node(node_call),
+            storage=self.__storage,
+            broker=self.__broker,
+            executor=Executor,
+            get_node_trace_message=lambda node: f"Node: {node.executor_params.node_id}",
+            get_graph_trace_message=lambda node: f"Graph: {node.executor_params.node_id}",
         )
 
     @__TRACER.with_span_async(Tracer.INFO, "client.cancel_session")
@@ -58,7 +63,12 @@ class Server[SP: Any, BP: Any]:
         await self.__broker.add_on_node_enqueued_callback(
             node.broker_params,
             callback=functools.partial(
-                Interactor.on_node_enqueued, storage=self.__storage, broker=self.__broker, executor=self.__executor
+                Interactor.on_node_enqueued,
+                storage=self.__storage,
+                broker=self.__broker,
+                executor=self.__executor,
+                get_node_trace_message=lambda node: f"Node: {node.executor_params.node_id}",
+                get_graph_trace_message=lambda node: f"Graph: {node.executor_params.node_id}",
             ),
         )
 
