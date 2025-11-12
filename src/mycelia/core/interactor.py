@@ -1,5 +1,6 @@
 import asyncio
-from asyncio import Task, TaskGroup
+import contextlib
+from asyncio import CancelledError, Task, TaskGroup
 from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any, ClassVar, Final, Literal, Self, cast, final, overload
@@ -244,9 +245,12 @@ class Interactor:
                         )
                     )
 
-                    await asyncio.wait(
-                        fs=(session_cancelled_event_task, on_node_enqueued_task), return_when=asyncio.FIRST_COMPLETED
-                    )
+                    # The `wait` will be cancelled if one of the task failed.
+                    with contextlib.suppress(CancelledError):
+                        await asyncio.wait(
+                            fs=(session_cancelled_event_task, on_node_enqueued_task),
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
 
                     if session_cancelled_event.is_set:
                         on_node_enqueued_task.cancel(msg="Session cancelled.")
